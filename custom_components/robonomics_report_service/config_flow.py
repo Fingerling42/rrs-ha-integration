@@ -3,48 +3,47 @@ import logging
 
 import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.data_entry_flow import FlowResult
+from homeassistant.config_entries import ConfigFlowResult
 from tenacity import retry, stop_after_attempt, wait_fixed, after_log
 
-from .const import (
-    DOMAIN,
-    CONF_EMAIL,
-    CONF_SENDER_SEED,
-)
+from .const import DOMAIN, CONF_EMAIL, CONF_SENDER_SEED
+
 from .robonomics import Robonomics
 from .rws_registration import RWSRegistrationManager
 from .libp2p import LibP2P
 
 _LOGGER = logging.getLogger(__name__)
 
-STEP_USER_DATA_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_EMAIL): str,
-    }
-)
 
+class ReportServiceConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    """
+    Handle a config flow for the Report Service.
 
-class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for the Report Service."""
+    The class object exists only for the duration of the setup wizard,
+    and the result is a ConfigEntry that lives permanently.
+    """
 
+    # The schema version of the entries that it creates
+    # HA will call migrate method if the version changes
     VERSION = 1
 
     def __init__(self):
+        self.user_data = {}
         self.seed_saved = False
 
-    async def async_step_user(self, user_input: tp.Optional[dict] = None) -> FlowResult:
-        """Handle the initial step of the configuration. Contains user's warnings.
-        :param user_input: Dict with the keys from STEP_USER_DATA_SCHEMA and values provided by user
-        :return: Service functions from HomeAssistant
+    async def async_step_user(self, user_input=None) -> ConfigFlowResult:
+        """
+        Handle the initial step of the configuration.
         """
 
+        # Since it is needed exactly one integration instance, then assign
+        # a unique ID to the flow and abort the flow if another flow
+        # with the same unique ID is in progress
         await self.async_set_unique_id(DOMAIN)
+
+        # Abort the flow if a config entry with the same unique ID exists
         self._abort_if_unique_id_configured()
-        if user_input is None:
-            return self.async_show_form(
-                step_id="user", data_schema=STEP_USER_DATA_SCHEMA
-            )
-        self.user_data = user_input
+
         sender_seed = Robonomics.generate_seed()
         self.user_data[CONF_SENDER_SEED] = sender_seed
         return await self.async_step_seed()
