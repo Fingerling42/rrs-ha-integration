@@ -1,14 +1,23 @@
 {
     "title": "Robonomics Report Service",
     "config": {
-      "step": {
-        "user": {
-          "title": "Robonomics Report Service",
-          "description": "Do you want to configure the Report Service?"
+        "step": {
+            "user": {
+                "title": "Robonomics Report Service",
+                "description": "Enter data (for integrator only)",
+                "data": {
+                    "integrator_address": "Robonomics address of integrator",
+                    "pinata_secret": "Pinata secret key",
+                    "pinata_public": "Pinata public key"
+                }
+            },
+            "seed": {
+                "title": "Robonomics Report Service",
+                "description": "Save the mnemonic seed safely \n\n`\n{seed}\n`"
+            }
+        },
+        "abort": {
+            "already_configured": "[%key:common::config_flow::abort::already_configured_service%]"
         }
-      },
-      "abort": {
-        "already_configured": "[%key:common::config_flow::abort::already_configured_service%]"
-      }
     }
 }
