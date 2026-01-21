@@ -1,7 +1,7 @@
 import logging
 import json
 import secrets
-from typing import Union, List
+from typing import Union, List, Optional, Any
 from nacl.secret import SecretBox
 
 from robonomicsinterface import Account
@@ -12,7 +12,8 @@ _LOGGER = logging.getLogger(__name__)
 def multi_envelope_encrypt_data(
     data: str,
     sender_account: Account,
-    recipient_addresses: List[str]
+    recipient_addresses: List[str],
+    metadata: Optional[dict[str, Any]] = None,
 ) -> str:
     """
     Encrypt the data with a symmetric secret key, and then encrypt the key
@@ -22,10 +23,19 @@ def multi_envelope_encrypt_data(
     """
     encryption_package = {}
 
+    # Add metadata to encryption
+    if metadata is not None:
+        prepared_data = json.dumps(
+            {"payload": data, "meta": metadata},
+            ensure_ascii=False
+            )
+    else:
+        prepared_data = data
+
     # Prepare encrypted data: bytes of data go through secret box,
     # resulted EncryptedMessage is serialised to hex
     secret_key = secrets.token_bytes(32)
-    data_bytes = data.encode("utf-8")
+    data_bytes = prepared_data.encode("utf-8")
     encrypted_data = SecretBox(secret_key).encrypt(data_bytes)
     encryption_package["data"] = "0x" + bytes(encrypted_data).hex()
 
@@ -163,3 +173,15 @@ def decrypt_msg(
     bytes_encrypted = bytes.fromhex(encrypted_msg)
 
     return recipient_keypair.decrypt_message(bytes_encrypted, sender_public_key)
+
+def parse_decrypted(text: str) -> tuple[str, dict | None]:
+    """
+    Parse decrypted data if metadata was added or return just data overwise
+    """
+    try:
+        obj = json.loads(text)
+        if isinstance(obj, dict) and "payload" in obj:
+            return obj["payload"], obj.get("meta")
+    except json.JSONDecodeError:
+        pass
+    return text, None

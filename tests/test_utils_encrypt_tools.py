@@ -7,7 +7,8 @@ from custom_components.robonomics_report_service.utils.encrypt_tools import (
     encrypt_msg,
     decrypt_msg,
     multi_envelope_encrypt_data,
-    multi_envelope_decrypt_data
+    multi_envelope_decrypt_data,
+    parse_decrypted
 )
 
 SENDER_SEED = "frozen woman pet meat entire question balcony wing echo excess adjust sleep"
@@ -76,3 +77,33 @@ def test_round_trip_multi_envelope(data, sender_account, recipient_account):
     )
 
     assert decrypted_data_recipient == decrypted_data_sender == data
+
+def test_round_trip_multi_envelope_with_metadata(
+        sender_account,
+        recipient_account
+        ):
+    """Encrypt/decrypt with metadata"""
+    payload = "test message"
+    meta = {
+        "file_name": "test.txt"
+    }
+
+    recipient_addresses = [recipient_account.get_address()]
+
+    encrypted_data = multi_envelope_encrypt_data(
+        payload,
+        sender_account,
+        recipient_addresses,
+        meta
+    )
+
+    decrypted_data = multi_envelope_decrypt_data(
+        encrypted_data,
+        recipient_account,
+        sender_account.get_address()
+    )
+
+    decrypted_payload, decrypted_meta = parse_decrypted(decrypted_data)
+
+    assert payload == decrypted_payload
+    assert meta == decrypted_meta
