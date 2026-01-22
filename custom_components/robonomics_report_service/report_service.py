@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import List
+import asyncio
 
 from homeassistant.core import HomeAssistant
 
@@ -15,7 +15,7 @@ from .ipfs import IPFS, PinataKeysRewoked
 from .utils.file_handler import (
     create_temp_dir_with_encrypted_files,
     delete_temp_dir,
-    get_tempdir_filenames
+    get_temp_dirs
 )
 from .robonomics import Robonomics
 
@@ -29,6 +29,7 @@ class ReportService:
         self.hass = hass
         self.robonomics = robonomics
         self.ipfs = IPFS(hass)
+        self._send_lock = asyncio.Lock()
 
     async def async_init(self) -> None:
         """Initial routine in async style"""
@@ -40,64 +41,82 @@ class ReportService:
 
         _LOGGER.debug("Sending a new report is started")
 
-        try:
-            temp_dir = await self._get_temp_dir_with_encrypted_logs()
+        temp_logs_dir: str | None = None
 
-            data_to_send = await self.ipfs.pin_to_pinata(temp_dir)
+        async with self._send_lock:
+            try:
+                temp_logs_dir = await self._get_temp_dir_with_encrypted_logs()
 
-            if data_to_send is not None:
-                await self.robonomics.send_datalog(data_to_send)
+                data_to_send = await self.ipfs.pin_to_pinata(temp_logs_dir)
 
-        except PinataKeysRewoked as e:
-            _LOGGER.error("Exception in creating files to send: %s", e)
+                if data_to_send is not None:
+                    await self.robonomics.send_datalog(data_to_send)
+                    _LOGGER.debug("A new report is sent")
+                else:
+                    _LOGGER.warning("Pinata returned no data; report not sent")
 
-        finally:
-            await self._remove_temp_dir(temp_dir)
+            except PinataKeysRewoked as e:
+                _LOGGER.error("Failed to pin report to Pinata: %s", e)
 
-        _LOGGER.debug("A new report is sent")
+            except ValueError as e:
+                _LOGGER.warning("Report not sent: %s", e)
+
+            except Exception:
+                _LOGGER.exception("Unexpected error while sending report")
+
+            finally:
+                await self._delete_temp_dir(temp_logs_dir)
 
     async def _get_temp_dir_with_encrypted_logs(self) -> str:
         files = self._get_logs_files()
+
+        if not files:
+            raise ValueError("No HA log files found to include in report")
 
         temp_dir = await self._async_create_temp_dir_with_encrypted_files(files)
 
         return temp_dir
 
-    def _get_logs_files(self) -> List[str]:
+    def _get_logs_files(self) -> list[str]:
         hass_config_path = self.hass.config.path()
         files = []
 
-        if os.path.isfile(f"{hass_config_path}/{LOG_FILE_NAME}"):
-            files.append(f"{hass_config_path}/{LOG_FILE_NAME}")
-        if os.path.isfile(f"{hass_config_path}/{TRACES_FILE_NAME}"):
-            files.append(f"{hass_config_path}/{TRACES_FILE_NAME}")
+        log_path = os.path.join(hass_config_path, LOG_FILE_NAME)
+        traces_path = os.path.join(hass_config_path, TRACES_FILE_NAME)
+
+        if os.path.isfile(log_path):
+            files.append(log_path)
+        if os.path.isfile(traces_path):
+            files.append(traces_path)
 
         return files
 
     async def _async_create_temp_dir_with_encrypted_files(
-            self,
-            files: List[str]
-            ) -> str:
+        self,
+        files: list[str]
+    ) -> str:
         return await self.hass.async_add_executor_job(
             self._create_temp_dir_with_encrypted_files, files
         )
 
-    def _create_temp_dir_with_encrypted_files(self, files: List[str]) -> str:
+    def _create_temp_dir_with_encrypted_files(self, files: list[str]) -> str:
         return create_temp_dir_with_encrypted_files(
             IPFS_PROBLEM_REPORT_FOLDER,
             files,
-            self.robonomics.sender_seed,
-            PROBLEM_SERVICE_ROBONOMICS_ADDRESS,
+            self.robonomics.sender_account,
+            [PROBLEM_SERVICE_ROBONOMICS_ADDRESS],
         )
 
     async def _clear_temp_dirs(self) -> None:
         dirs_to_delete = await self.hass.async_add_executor_job(
-            get_tempdir_filenames, IPFS_PROBLEM_REPORT_FOLDER
+            get_temp_dirs, IPFS_PROBLEM_REPORT_FOLDER
         )
-        for dirname in dirs_to_delete:
-            await self._remove_temp_dir(dirname)
+        for dir_name in dirs_to_delete:
+            await self._delete_temp_dir(dir_name)
 
-    async def _remove_temp_dir(self, temp_dir: str) -> None:
+    async def _delete_temp_dir(self, temp_dir: str | None) -> None:
+        if not temp_dir:
+            return
         if os.path.exists(temp_dir):
             await self.hass.async_add_executor_job(delete_temp_dir, temp_dir)
             _LOGGER.debug("Temp directory %s was deleted", temp_dir)

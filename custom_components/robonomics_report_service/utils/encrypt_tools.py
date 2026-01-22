@@ -99,7 +99,7 @@ def multi_envelope_decrypt_data(
 
     # Check if recipient address is authorized with secret key
     recipient_address = recipient_account.get_address()
-    encrypted_secret_key = encrypted_secret_keys[recipient_address]
+    encrypted_secret_key = encrypted_secret_keys.get(recipient_address)
     if not encrypted_secret_key:
         _LOGGER.warning(
             "Envelope decrypt: recipient key not found for %s",
