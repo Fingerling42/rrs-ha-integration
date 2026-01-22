@@ -1,7 +1,7 @@
 import logging
 import json
 import secrets
-from typing import Union, List, Optional, Any
+from typing import Union, Optional, Any
 from nacl.secret import SecretBox
 
 from robonomicsinterface import Account
@@ -12,7 +12,7 @@ _LOGGER = logging.getLogger(__name__)
 def multi_envelope_encrypt_data(
     data: str,
     sender_account: Account,
-    recipient_addresses: List[str],
+    recipient_addresses: list[str],
     metadata: Optional[dict[str, Any]] = None,
 ) -> str:
     """
@@ -28,7 +28,7 @@ def multi_envelope_encrypt_data(
         prepared_data = json.dumps(
             {"payload": data, "meta": metadata},
             ensure_ascii=False
-            )
+        )
     else:
         prepared_data = data
 
@@ -125,7 +125,8 @@ def multi_envelope_decrypt_data(
         raise ValueError("Failed to decrypt secret key") from e
 
     try:
-        # Deserialize encrypted data: remove 0x from beginning, transform to bytes
+        # Deserialize encrypted data: remove 0x from beginning,
+        # transform to bytes
         encrypted_data = bytes.fromhex(encrypted_data_hex[2:])
 
         # Decrypt actual message (in form of bytes) and decode it

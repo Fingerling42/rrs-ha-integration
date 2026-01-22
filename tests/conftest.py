@@ -1,0 +1,23 @@
+import pytest
+
+from robonomicsinterface import Account
+from substrateinterface import KeypairType
+
+SENDER_SEED = "frozen woman pet meat entire question balcony wing echo excess adjust sleep"
+RECIPIENT_SEED = "lens exchange drum inside current bullet include stamp purity decline absurd play"
+TEMP_DIR_NAME_PREFIX = "dir_for_test"
+
+@pytest.fixture(scope="module", name="sender_account")
+def fixture_sender_account():
+    """Returns sender account with ED25519 type"""
+    return Account(SENDER_SEED, crypto_type=KeypairType.ED25519)
+
+@pytest.fixture(scope="module", name="recipient_account")
+def fixture_recipient_account():
+    """Returns recipient account with ED25519 type"""
+    return Account(RECIPIENT_SEED, crypto_type=KeypairType.ED25519)
+
+@pytest.fixture(scope="module", name="temp_dir_name_prefix")
+def fixture_temp_dir_name_prefix():
+    """Returns prefix for temp directory name"""
+    return TEMP_DIR_NAME_PREFIX
