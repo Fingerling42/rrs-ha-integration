@@ -11,6 +11,7 @@ from .const import (
     CONF_SENDER_SEED,
     CONF_PINATA_SECRET,
     CONF_PINATA_PUBLIC,
+    PROBLEM_SERVICE_ROBONOMICS_ADDRESS,
     )
 
 from .robonomics import Robonomics
@@ -22,6 +23,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_PINATA_SECRET): str,
         vol.Required(CONF_PINATA_PUBLIC): str,
+        vol.Required(PROBLEM_SERVICE_ROBONOMICS_ADDRESS): str,
     }
 )
 

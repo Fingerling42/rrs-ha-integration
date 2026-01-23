@@ -8,7 +8,6 @@ from .const import (
     LOG_FILE_NAME,
     TRACES_FILE_NAME,
     IPFS_PROBLEM_REPORT_FOLDER,
-    PROBLEM_SERVICE_ROBONOMICS_ADDRESS,
 )
 
 from .ipfs import IPFS, PinataKeysRewoked
@@ -25,9 +24,14 @@ _LOGGER = logging.getLogger(__name__)
 class ReportService:
     """Main class to pass HA logs to Robonomics parachain"""
 
-    def __init__(self, hass: HomeAssistant, robonomics: Robonomics):
+    def __init__(self,
+        hass: HomeAssistant,
+        robonomics: Robonomics,
+        problem_service_address: str,
+    ):
         self.hass = hass
         self.robonomics = robonomics
+        self.problem_service_address = problem_service_address
         self.ipfs = IPFS(hass)
         self._send_lock = asyncio.Lock()
 
@@ -104,7 +108,7 @@ class ReportService:
             IPFS_PROBLEM_REPORT_FOLDER,
             files,
             self.robonomics.sender_account,
-            [PROBLEM_SERVICE_ROBONOMICS_ADDRESS],
+            [self.problem_service_address],
         )
 
     async def _clear_temp_dirs(self) -> None:
