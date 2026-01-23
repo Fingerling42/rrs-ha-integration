@@ -1,56 +1,92 @@
 import logging
 
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
 
+from .const import (
+    DOMAIN,
+    STORAGE_NAME,
+    CONF_SENDER_SEED,
+    PROBLEM_SERVICE_ROBONOMICS_ADDRESS,
+    ERROR_SOURCES_MANAGER,
+)
 
-from .const import CONF_SENDER_SEED, DOMAIN, ERROR_SOURCES_MANAGER, CONF_EMAIL
-
-# from .frontend import async_register_frontend, async_remove_frontend
-from .rws_registration import RWSRegistrationManager
 from .robonomics import Robonomics
 from .error_sources.error_source_manager import ErrorSourcesManager
 from .report_service import ReportService
-from .libp2p import LibP2P
+from .utils.ha_storage import async_remove_store, async_load_from_store
 
 _LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """
+    Setup of a specific integration instance.
+
+    Called by the config entries manager if:
+    - the user added the integration via the UI
+    - HA restores existing entries upon startup
+    """
+
+    # Check that the global dict for integration exists
     hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN][CONF_EMAIL] = entry.data[CONF_EMAIL]
+
+    hass.data[DOMAIN].setdefault(entry.entry_id, {})
+
+    # Load credentials from storage
+    storage_data = await async_load_from_store(hass, STORAGE_NAME)
+
+    # Prepare Robonomics class
     robonomics = Robonomics(
         hass,
-        entry.data[CONF_SENDER_SEED],
+        storage_data[CONF_SENDER_SEED],
     )
-    await robonomics.setup()
-    libp2p = LibP2P(robonomics.sender_address)
-    await libp2p.disconnect()
-    # async_register_frontend(hass)
-    await RWSRegistrationManager.register(hass, robonomics, libp2p)
-    await ReportService(hass, robonomics, libp2p).register()
-    error_sources_manager = ErrorSourcesManager(hass)
-    error_sources_manager.setup_sources()
-    hass.data[DOMAIN][ERROR_SOURCES_MANAGER] = error_sources_manager
+
+    # Prepare report service
+    report_service = ReportService(
+        hass,
+        robonomics,
+        storage_data[PROBLEM_SERVICE_ROBONOMICS_ADDRESS]
+    )
+    await report_service.async_init()
+
+    # Register send_report as HA service
+    hass.data[DOMAIN][entry.entry_id]["report_service"] = report_service
+
+    async def _handle_send_report(call: ServiceCall) -> None:
+        await report_service.send_report()
+
+    hass.services.async_register(DOMAIN, "send_report", _handle_send_report)
+
+    #error_sources_manager = ErrorSourcesManager(hass)
+    #error_sources_manager.setup_sources()
+    #hass.data[DOMAIN][ERROR_SOURCES_MANAGER] = error_sources_manager
 
     return True
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """
+    Global integration setup.
+
+    Called at HA startup when it loads the configuration.
+    """
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry.
-    It calls during integration's removing.
-
-    :param hass: HomeAssistant instance
-    :param entry: Data from config
-
-    :return: True if all unload event were success
     """
-    hass.data[DOMAIN][ERROR_SOURCES_MANAGER].remove_sources()
-    await RWSRegistrationManager.delete(hass)
-    # async_remove_frontend(hass)
+    Unload a config entry.
+
+    It calls during integration's removing.
+    """
+    #hass.data[DOMAIN][ERROR_SOURCES_MANAGER].remove_sources()
+
+    hass.services.async_remove(DOMAIN, "send_report")
+    hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+
+    await async_remove_store(hass, STORAGE_NAME)
+    _LOGGER.debug("Credentials deleted from storage")
+
     return True
