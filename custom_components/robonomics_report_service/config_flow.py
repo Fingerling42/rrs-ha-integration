@@ -4,6 +4,8 @@ from typing import Any
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigFlowResult
+from robonomicsinterface import Keypair, KeypairType
+from robonomicsinterface.utils import create_keypair
 
 from .const import (
     DOMAIN,
@@ -42,6 +44,7 @@ class ReportServiceConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     def __init__(self):
         self.seed_saved = False
+        self._sender_seed: str | None = None
         self._storage_data = {}
 
     async def async_step_user(
@@ -68,26 +71,30 @@ class ReportServiceConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return await self.async_step_seed()
 
-    async def async_step_seed(
-            self,
-            user_input: dict[str, Any] | None = None
-            ) -> ConfigFlowResult:
+    async def async_step_seed(self, user_input=None) -> ConfigFlowResult:
         """Show the seed to user and configure Robonomics"""
 
-        sender_seed = Robonomics.generate_seed()
+        if self._sender_seed is None:
+            self._sender_seed = Robonomics.generate_seed()
 
-        # Show the form with the seed if it hasn't already been done
-        # then save seed in _storage_data
+        keypair: Keypair = create_keypair(
+            self._sender_seed,
+            crypto_type=KeypairType.ED25519
+        )
+
+        # Show the form with the seed and related address if it hasn't already
+        # been done, then save seed in _storage_data
         if not self.seed_saved:
             self.seed_saved = True
             return self.async_show_form(
                 step_id="seed",
                 data_schema=vol.Schema({}),
                 description_placeholders={
-                    "seed": sender_seed
+                    "seed": self._sender_seed,
+                    "address": keypair.ss58_address
                     },
             )
-        self._storage_data[CONF_SENDER_SEED] = sender_seed
+        self._storage_data[CONF_SENDER_SEED] = self._sender_seed
 
         # Save config to persistent storage without direct user access from UI
         await async_save_to_store(

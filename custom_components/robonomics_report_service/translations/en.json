@@ -6,14 +6,14 @@
                 "title": "Robonomics Report Service",
                 "description": "Enter data (for integrator only)",
                 "data": {
-                    "integrator_address": "Robonomics address of integrator",
-                    "pinata_secret": "Pinata secret key",
-                    "pinata_public": "Pinata public key"
+                    "problem_service_robonomics_address": "Robonomics address of integrator problem service",
+                    "pinata_public": "Pinata public key",
+                    "pinata_secret": "Pinata secret key"
                 }
             },
             "seed": {
                 "title": "Robonomics Report Service",
-                "description": "Save the mnemonic seed safely \n\n`\n{seed}\n`"
+                "description": "Save the mnemonic seed for this HA instanse safely.\n\n**Mnemonic seed**\n```\n{seed}\n```\n\n**Robonomics address**\n```\n{address}\n```"
             }
         },
         "abort": {
