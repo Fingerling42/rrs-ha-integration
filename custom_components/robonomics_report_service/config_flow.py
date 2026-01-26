@@ -14,6 +14,7 @@ from .const import (
     CONF_PINATA_SECRET,
     CONF_PINATA_PUBLIC,
     PROBLEM_SERVICE_ROBONOMICS_ADDRESS,
+    OWNER_ADDRESS,
     )
 
 from .robonomics import Robonomics
@@ -23,9 +24,10 @@ _LOGGER = logging.getLogger(__name__)
 
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
-        vol.Required(CONF_PINATA_SECRET): str,
-        vol.Required(CONF_PINATA_PUBLIC): str,
         vol.Required(PROBLEM_SERVICE_ROBONOMICS_ADDRESS): str,
+        vol.Required(CONF_PINATA_PUBLIC): str,
+        vol.Required(CONF_PINATA_SECRET): str,
+        vol.Optional(OWNER_ADDRESS): str,
     }
 )
 
@@ -61,7 +63,7 @@ class ReportServiceConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # Abort the flow if a config entry with the same unique ID exists
         self._abort_if_unique_id_configured()
 
-        # Show the form to enter Pinata data
+        # Show the form to enter Pinata and Robonomics data
         # if it hasn't already been done, then save data in _storage_data
         if user_input is None:
             return self.async_show_form(

@@ -8,7 +8,8 @@
                 "data": {
                     "problem_service_robonomics_address": "Robonomics address of integrator problem service",
                     "pinata_public": "Pinata public key",
-                    "pinata_secret": "Pinata secret key"
+                    "pinata_secret": "Pinata secret key",
+                    "subscription_owner_robonomics_address": "(Optional) Robonomics address of subscription owner"
                 }
             },
             "seed": {

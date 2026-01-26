@@ -9,6 +9,7 @@ from .const import (
     STORAGE_NAME,
     CONF_SENDER_SEED,
     PROBLEM_SERVICE_ROBONOMICS_ADDRESS,
+    OWNER_ADDRESS,
     ERROR_SOURCES_MANAGER,
 )
 
@@ -41,6 +42,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     robonomics = Robonomics(
         hass,
         storage_data[CONF_SENDER_SEED],
+        storage_data[OWNER_ADDRESS] if OWNER_ADDRESS in storage_data else None
     )
 
     # Prepare report service

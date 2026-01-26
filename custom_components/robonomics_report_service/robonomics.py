@@ -28,6 +28,7 @@ class Robonomics:
         self,
         hass: HomeAssistant,
         sender_seed: str,
+        owner_address: str | None = None,
     ):
         self.hass: HomeAssistant = hass
         self.sender_seed: str = sender_seed
@@ -39,6 +40,10 @@ class Robonomics:
         )
         self.sender_address: str = self.sender_account.get_address()
         _LOGGER.debug("Sender address: %s", self.sender_address)
+
+        self._owner_address = owner_address
+        if self._owner_address:
+            _LOGGER.debug("Owner address: %s", self._owner_address)
 
         self._datalog_queue = deque()
         self._datalogs_are_sending = False
@@ -92,8 +97,8 @@ class Robonomics:
                         _LOGGER.warning("Datalog sending exception: %s", e)
                         return False
 
-                    except Exception as e:
-                        _LOGGER.warning("Datalog sending exeption: %s", e)
+                    except Exception:
+                        _LOGGER.exception("Datalog sending exception")
                         return False
 
         return wrapper
@@ -147,9 +152,13 @@ class Robonomics:
     @_retry_decorator
     def _send_datalog(self, data_to_send: str) -> bool:
         _LOGGER.debug("Start creating datalog with data: %s", data_to_send)
+
+        # If no owner address is provided, use RWS of sender
         datalog = Datalog(
-            self.sender_account, rws_sub_owner=self.sender_address
+            self.sender_account,
+            rws_sub_owner=self._owner_address or self.sender_address
         )
+
         receipt = datalog.record(data_to_send)
         _LOGGER.debug(
             "Datalog created with hash: %s, %d datalogs left in the queue",

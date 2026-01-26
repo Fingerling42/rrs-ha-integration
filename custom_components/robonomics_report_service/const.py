@@ -22,5 +22,5 @@ PROBLEM_SERVICE_ROBONOMICS_ADDRESS = "problem_service_robonomics_address"
 
 CHECK_ENTITIES_TIMEOUT = 24  # Hours
 
-OWNER_ADDRESS = PROBLEM_SERVICE_ROBONOMICS_ADDRESS
+OWNER_ADDRESS = "subscription_owner_robonomics_address"
 ERROR_SOURCES_MANAGER = "error_sources_manages"
