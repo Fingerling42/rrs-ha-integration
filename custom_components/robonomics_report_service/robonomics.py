@@ -132,7 +132,9 @@ class Robonomics:
 
                 if not res:
                     try:
-                        await IPFS(self.hass).unpin_from_pinata(data_to_send)
+                        await IPFS(self.hass).unpin_files_from_pinata(
+                            data_to_send
+                        )
                     except Exception:
                         _LOGGER.exception(
                             "Failed to unpin from Pinata after datalog failure"

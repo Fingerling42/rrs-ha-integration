@@ -14,7 +14,8 @@ from .ipfs import IPFS, PinataKeysRewoked
 from .utils.file_handler import (
     create_temp_dir_with_encrypted_files,
     delete_temp_dir,
-    get_temp_dirs
+    get_temp_dirs,
+    create_temp_archive
 )
 from .robonomics import Robonomics
 
@@ -46,12 +47,21 @@ class ReportService:
         _LOGGER.debug("Sending a new report is started")
 
         temp_logs_dir: str | None = None
+        temp_archive_dir: str | None = None
 
         async with self._send_lock:
             try:
                 temp_logs_dir = await self._get_temp_dir_with_encrypted_logs()
 
-                data_to_send = await self.ipfs.pin_to_pinata(temp_logs_dir)
+                temp_archive_path = await self._async_create_temp_archive(
+                    temp_logs_dir,
+                    self.robonomics.sender_address
+                )
+                temp_archive_dir = os.path.dirname(temp_archive_path)
+
+                data_to_send = await self.ipfs.pin_file_to_pinata(
+                    temp_archive_path
+                )
 
                 if data_to_send is not None:
                     await self.robonomics.send_datalog(data_to_send)
@@ -70,6 +80,7 @@ class ReportService:
 
             finally:
                 await self._delete_temp_dir(temp_logs_dir)
+                await self._delete_temp_dir(temp_archive_dir)
 
     async def _get_temp_dir_with_encrypted_logs(self) -> str:
         files = self._get_logs_files()
@@ -123,4 +134,12 @@ class ReportService:
             return
         if os.path.exists(temp_dir):
             await self.hass.async_add_executor_job(delete_temp_dir, temp_dir)
-            _LOGGER.debug("Temp directory %s was deleted", temp_dir)
+
+    async def _async_create_temp_archive(
+        self,
+        dir_to_archive: str,
+        address_prefix: str
+    ) -> str:
+        return await self.hass.async_add_executor_job(
+            create_temp_archive, dir_to_archive, address_prefix
+        )

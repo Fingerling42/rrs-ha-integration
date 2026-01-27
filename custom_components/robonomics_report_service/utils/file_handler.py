@@ -2,6 +2,8 @@ import logging
 import os
 import tempfile
 import shutil
+from datetime import datetime, timezone
+from zipfile import ZipFile, ZIP_DEFLATED
 
 from robonomicsinterface import Account
 
@@ -89,11 +91,13 @@ def delete_temp_dir(temp_dir_path: str) -> None:
     """
     try:
         shutil.rmtree(temp_dir_path)
-        _LOGGER.debug("Tempdir removed: %s", temp_dir_path)
+        _LOGGER.debug("Temp directory is removed: %s", temp_dir_path)
     except FileNotFoundError:
-        _LOGGER.debug("Tempdir already removed: %s", temp_dir_path)
+        _LOGGER.debug(
+            "Temp directory has benn already removed: %s", temp_dir_path
+        )
     except Exception:
-        _LOGGER.warning("Failed to remove tempdir: %s", temp_dir_path)
+        _LOGGER.warning("Failed to remove temp directory: %s", temp_dir_path)
 
 def get_temp_dirs(dir_name_prefix: str) -> list[str]:
     """
@@ -118,3 +122,40 @@ def get_temp_dirs(dir_name_prefix: str) -> list[str]:
         return []
 
     return found_temp_dirs_paths
+
+def create_temp_archive(
+    dir_to_archive: str,
+    address_prefix: str
+) -> str:
+    """
+    Create ZIP archive with files from dir
+
+    :param dir_to_archive:  directory to zip
+    :param address_prefix:  Robonomics address to name archive
+
+    :return: path to created archive
+    """
+    temp_archive_dir_path = tempfile.mkdtemp(prefix="tmp-report-archive-")
+
+    # Prepearing path and name for archive
+    dt = datetime.now(timezone.utc)
+    dt_prefix = dt.strftime(
+        "%Y%m%dT%H%M%S"
+    ) + "MS" + f"{dt.microsecond//1000:03d}"
+
+    temp_archive_name = f"{address_prefix}-{dt_prefix}.zip"
+    temp_archive_path = os.path.join(temp_archive_dir_path, temp_archive_name)
+
+    try:
+        with ZipFile(
+            temp_archive_path, 'w', compression=ZIP_DEFLATED
+        ) as zip_file:
+            for entry in os.scandir(dir_to_archive):
+                if not entry.is_file():
+                    continue
+                zip_file.write(entry.path, entry.name)
+    except Exception:
+        shutil.rmtree(temp_archive_dir_path, ignore_errors=True)
+        raise
+
+    return temp_archive_path
