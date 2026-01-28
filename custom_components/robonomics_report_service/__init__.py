@@ -11,6 +11,7 @@ from .const import (
     PROBLEM_SERVICE_ROBONOMICS_ADDRESS,
     OWNER_ADDRESS,
     ERROR_SOURCES_MANAGER,
+    PROBLEM_REPORT_SERVICE
 )
 
 from .robonomics import Robonomics
@@ -57,13 +58,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN][entry.entry_id]["report_service"] = report_service
 
     async def _handle_send_report(call: ServiceCall) -> None:
-        await report_service.send_report()
+        if not call.data:
+            await report_service.send_report(issue=None)
+            return
 
-    hass.services.async_register(DOMAIN, "send_report", _handle_send_report)
+        issue = dict(call.data)
+        await report_service.send_report(issue=issue)
 
-    #error_sources_manager = ErrorSourcesManager(hass)
-    #error_sources_manager.setup_sources()
-    #hass.data[DOMAIN][ERROR_SOURCES_MANAGER] = error_sources_manager
+    hass.services.async_register(
+        DOMAIN,
+        PROBLEM_REPORT_SERVICE,
+        _handle_send_report
+    )
+
+    error_sources_manager = ErrorSourcesManager(hass)
+    error_sources_manager.setup_sources()
+    hass.data[DOMAIN][ERROR_SOURCES_MANAGER] = error_sources_manager
 
     return True
 
@@ -83,7 +93,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     It calls during integration's removing.
     """
-    #hass.data[DOMAIN][ERROR_SOURCES_MANAGER].remove_sources()
+    hass.data[DOMAIN][ERROR_SOURCES_MANAGER].remove_sources()
 
     hass.services.async_remove(DOMAIN, "send_report")
     hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)

@@ -1,3 +1,3 @@
-send_report:
-  name: Send report
-  description: Create an encrypted report, pin it to Pinata/IPFS, and send the datalog entry.
+send_problem_report:
+  name: Send report only with HA logs
+  description: Create an encrypted report with logs, pin it to Pinata/IPFS, and send the datalog entry.
