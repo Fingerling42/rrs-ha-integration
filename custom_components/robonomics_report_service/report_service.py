@@ -1,13 +1,14 @@
 import logging
 import os
 import asyncio
+from typing import Any
 
 from homeassistant.core import HomeAssistant
 
 from .const import (
     LOG_FILE_NAME,
     TRACES_FILE_NAME,
-    IPFS_PROBLEM_REPORT_FOLDER,
+    RRS_REPORT_TEMP_DIR,
 )
 
 from .ipfs import IPFS, PinataKeysRewoked
@@ -15,7 +16,8 @@ from .utils.file_handler import (
     create_temp_dir_with_encrypted_files,
     delete_temp_dir,
     get_temp_dirs,
-    create_temp_archive
+    create_temp_archive,
+    create_temp_dir_with_issue
 )
 from .robonomics import Robonomics
 
@@ -41,21 +43,23 @@ class ReportService:
 
         await self._clear_temp_dirs()
 
-    async def send_report(self) -> None:
-        """Send report with logs as datalog"""
+    async def send_report(self, issue: dict[str, Any] | None = None) -> None:
+        """Send report with issue/logs as datalog"""
 
         _LOGGER.debug("Sending a new report is started")
 
         temp_logs_dir: str | None = None
         temp_archive_dir: str | None = None
+        temp_issue_dir: str | None = None
 
         async with self._send_lock:
             try:
-                temp_logs_dir = await self._get_temp_dir_with_encrypted_logs()
+                temp_logs_dir, temp_issue_dir = (
+                    await self._get_temp_dir_with_encrypted_payload(issue)
+                )
 
                 temp_archive_path = await self._async_create_temp_archive(
                     temp_logs_dir,
-                    self.robonomics.sender_address
                 )
                 temp_archive_dir = os.path.dirname(temp_archive_path)
 
@@ -65,7 +69,7 @@ class ReportService:
 
                 if data_to_send is not None:
                     await self.robonomics.send_datalog(data_to_send)
-                    _LOGGER.debug("A new report is sent")
+                    _LOGGER.debug("A new report is added to datalog queue")
                 else:
                     _LOGGER.warning("Pinata returned no data; report not sent")
 
@@ -81,16 +85,31 @@ class ReportService:
             finally:
                 await self._delete_temp_dir(temp_logs_dir)
                 await self._delete_temp_dir(temp_archive_dir)
+                await self._delete_temp_dir(temp_issue_dir)
 
-    async def _get_temp_dir_with_encrypted_logs(self) -> str:
+    async def _get_temp_dir_with_encrypted_payload(
+            self, issue: dict[str, Any] | None
+        ) -> tuple[str, str | None]:
+
         files = self._get_logs_files()
 
+        temp_issue_dir: str | None = None
+
+        if issue is not None:
+            issue_path = (
+                await self._async_create_temp_dir_with_issue(issue)
+            )
+            files.append(issue_path)
+            temp_issue_dir = os.path.dirname(issue_path)
+
         if not files:
-            raise ValueError("No HA log files found to include in report")
+            raise ValueError("No files found to include in report")
 
-        temp_dir = await self._async_create_temp_dir_with_encrypted_files(files)
+        temp_logs_dir = (
+            await self._async_create_temp_dir_with_encrypted_files(files)
+        )
 
-        return temp_dir
+        return temp_logs_dir, temp_issue_dir
 
     def _get_logs_files(self) -> list[str]:
         hass_config_path = self.hass.config.path()
@@ -116,7 +135,7 @@ class ReportService:
 
     def _create_temp_dir_with_encrypted_files(self, files: list[str]) -> str:
         return create_temp_dir_with_encrypted_files(
-            IPFS_PROBLEM_REPORT_FOLDER,
+            RRS_REPORT_TEMP_DIR,
             files,
             self.robonomics.sender_account,
             [self.problem_service_address],
@@ -124,7 +143,7 @@ class ReportService:
 
     async def _clear_temp_dirs(self) -> None:
         dirs_to_delete = await self.hass.async_add_executor_job(
-            get_temp_dirs, IPFS_PROBLEM_REPORT_FOLDER
+            get_temp_dirs, RRS_REPORT_TEMP_DIR
         )
         for dir_name in dirs_to_delete:
             await self._delete_temp_dir(dir_name)
@@ -138,8 +157,28 @@ class ReportService:
     async def _async_create_temp_archive(
         self,
         dir_to_archive: str,
-        address_prefix: str
     ) -> str:
         return await self.hass.async_add_executor_job(
-            create_temp_archive, dir_to_archive, address_prefix
+            self._create_temp_archive, dir_to_archive
+        )
+
+    def _create_temp_archive(self, dir_to_archive: str) -> str:
+        return create_temp_archive(
+            dir_to_archive,
+            self.robonomics.sender_address,
+            RRS_REPORT_TEMP_DIR
+        )
+
+    async def _async_create_temp_dir_with_issue(
+        self,
+        issue: dict[str, Any]
+    ) -> str:
+        return await self.hass.async_add_executor_job(
+            self._create_temp_dir_with_issue, issue
+        )
+
+    def _create_temp_dir_with_issue(self, issue: dict[str, Any]) -> str:
+        return create_temp_dir_with_issue(
+            issue,
+            RRS_REPORT_TEMP_DIR
         )

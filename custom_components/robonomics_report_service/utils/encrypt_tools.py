@@ -177,7 +177,7 @@ def decrypt_msg(
 
 def parse_decrypted(text: str) -> tuple[str, dict | None]:
     """
-    Parse decrypted data if metadata was added or return just data overwise
+    Parse decrypted data if metadata was added or return just data otherwise
     """
     try:
         obj = json.loads(text)

@@ -90,7 +90,11 @@ def test_get_temp_dirs(tmp_path, monkeypatch, temp_dir_name_prefix):
     assert str(other_dir_path) not in found_temp_dirs_paths
     assert sorted(temp_dirs_paths) == sorted(found_temp_dirs_paths)
 
-def test_create_temp_archive(tmp_path, monkeypatch, sender_account):
+def test_create_temp_archive(
+        tmp_path, monkeypatch,
+        sender_account,
+        temp_dir_name_prefix
+    ):
     """Test creating acrhive with files"""
 
     # Fake tempfile function to use temp dir from PyTest
@@ -111,10 +115,9 @@ def test_create_temp_archive(tmp_path, monkeypatch, sender_account):
 
     archive_path = file_handler.create_temp_archive(
         dir_with_files_path,
-        sender_account.get_address()
+        sender_account.get_address(),
+        temp_dir_name_prefix
     )
-
-    print(archive_path)
 
     assert os.path.isfile(archive_path)
     archive_name = os.path.basename(archive_path)
