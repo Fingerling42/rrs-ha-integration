@@ -3,10 +3,10 @@ import os
 import tempfile
 import shutil
 import json
-from datetime import datetime, timezone
 from zipfile import ZipFile, ZIP_DEFLATED
 from typing import Any
 
+import homeassistant.util.dt as dt_util
 from robonomicsinterface import Account
 
 from ..const import LOGS_MAX_BYTES
@@ -145,7 +145,7 @@ def create_temp_archive(
     )
 
     # Prepearing path and name for archive
-    dt = datetime.now(timezone.utc)
+    dt = dt_util.utcnow()
     dt_prefix = dt.strftime(
         "%Y%m%dT%H%M%S"
     ) + "MS" + f"{dt.microsecond//1000:03d}"

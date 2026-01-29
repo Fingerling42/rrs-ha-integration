@@ -58,6 +58,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN][entry.entry_id]["report_service"] = report_service
 
     async def _handle_send_report(call: ServiceCall) -> None:
+        # Allow calling the service from UI, just to send pure logs
         if not call.data:
             await report_service.send_report(issue=None)
             return
@@ -71,6 +72,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _handle_send_report
     )
 
+    # Configure and start manager for errors watchers
     error_sources_manager = ErrorSourcesManager(hass)
     error_sources_manager.setup_sources()
     hass.data[DOMAIN][ERROR_SOURCES_MANAGER] = error_sources_manager

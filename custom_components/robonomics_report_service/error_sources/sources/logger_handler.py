@@ -104,11 +104,11 @@ class LoggerHandler(ErrorSource):
                     "source": source,
                     "message": message,
                 }
+                _LOGGER.debug("LoggerHandler catched new log")
             else:
                 entry["count"] += 1
                 entry["last_seen"] = time_now
-
-        _LOGGER.debug("LoggerHandler catched new log")
+                _LOGGER.debug("LoggerHandler catched repeated log")
 
     async def _flush(self, _=None) -> None:
         """Send one accumulated report per time window"""
