@@ -8,7 +8,7 @@ from homeassistant.exceptions import HomeAssistantError
 from pinatapy import PinataPy
 
 from .utils.ha_storage import async_load_from_store
-from .const import STORAGE_NAME, CONF_PINATA_PUBLIC, CONF_PINATA_SECRET
+from .const import CREDS_STORAGE_KEY, CONF_PINATA_PUBLIC, CONF_PINATA_SECRET
 
 IpfsHashes = dict[str, str]
 
@@ -101,7 +101,7 @@ class IPFS:
         )
 
     async def _get_pinata_with_creds(self) -> tp.Optional[PinataPy]:
-        storage_data = await async_load_from_store(self.hass, STORAGE_NAME)
+        storage_data = await async_load_from_store(self.hass, CREDS_STORAGE_KEY)
         if (
             CONF_PINATA_PUBLIC in storage_data
             and CONF_PINATA_SECRET in storage_data

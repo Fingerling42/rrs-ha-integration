@@ -9,7 +9,7 @@ from robonomicsinterface.utils import create_keypair
 
 from .const import (
     DOMAIN,
-    STORAGE_NAME,
+    CREDS_STORAGE_KEY,
     CONF_SENDER_SEED,
     CONF_PINATA_SECRET,
     CONF_PINATA_PUBLIC,
@@ -101,7 +101,7 @@ class ReportServiceConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # Save config to persistent storage without direct user access from UI
         await async_save_to_store(
             self.hass,
-            STORAGE_NAME,
+            CREDS_STORAGE_KEY,
             self._storage_data,
         )
         _LOGGER.debug("Credential saved to storage")

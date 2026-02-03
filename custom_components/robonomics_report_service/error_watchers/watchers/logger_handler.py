@@ -10,13 +10,13 @@ from homeassistant.components.system_log import EVENT_SYSTEM_LOG
 from homeassistant.helpers.event import async_track_time_interval
 import homeassistant.util.dt as dt_util
 
-from .error_source import ErrorSource
+from .error_watcher import ErrorWatcher
 from ...const import DOMAIN, CHECK_LOGS_TIMEOUT
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class LoggerHandler(ErrorSource):
+class LoggerHandler(ErrorWatcher):
     """Watcher that react to all warning/errors in logs"""
     def __init__(self, hass: HomeAssistant):
         super().__init__(hass)
@@ -145,6 +145,7 @@ class LoggerHandler(ErrorSource):
             # Gather issue
             issue: dict[str, Any] = {
                 "type": "accumulated_system_log_problems",
+                "schema_version": 1,
                 "ts_start": self._period_start.isoformat(),
                 "ts_end": period_end.isoformat(),
                 "summary": (

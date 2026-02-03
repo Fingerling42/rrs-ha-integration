@@ -6,16 +6,16 @@ from homeassistant.helpers.typing import ConfigType
 
 from .const import (
     DOMAIN,
-    STORAGE_NAME,
+    CREDS_STORAGE_KEY,
     CONF_SENDER_SEED,
     PROBLEM_SERVICE_ROBONOMICS_ADDRESS,
     OWNER_ADDRESS,
-    ERROR_SOURCES_MANAGER,
+    ERROR_WATCHERS_MANAGER,
     PROBLEM_REPORT_SERVICE
 )
 
 from .robonomics import Robonomics
-from .error_sources.error_source_manager import ErrorSourcesManager
+from .error_watchers.error_watchers_manager import ErrorWatchersManager
 from .report_service import ReportService
 from .utils.ha_storage import async_remove_store, async_load_from_store
 
@@ -37,20 +37,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN].setdefault(entry.entry_id, {})
 
     # Load credentials from storage
-    storage_data = await async_load_from_store(hass, STORAGE_NAME)
+    creds_storage = await async_load_from_store(hass, CREDS_STORAGE_KEY)
 
     # Prepare Robonomics class
     robonomics = Robonomics(
         hass,
-        storage_data[CONF_SENDER_SEED],
-        storage_data[OWNER_ADDRESS] if OWNER_ADDRESS in storage_data else None
+        creds_storage[CONF_SENDER_SEED],
+        creds_storage.get(OWNER_ADDRESS)
     )
 
     # Prepare report service
     report_service = ReportService(
         hass,
         robonomics,
-        storage_data[PROBLEM_SERVICE_ROBONOMICS_ADDRESS]
+        creds_storage[PROBLEM_SERVICE_ROBONOMICS_ADDRESS]
     )
     await report_service.async_init()
 
@@ -73,9 +73,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     # Configure and start manager for errors watchers
-    error_sources_manager = ErrorSourcesManager(hass)
-    error_sources_manager.setup_sources()
-    hass.data[DOMAIN][ERROR_SOURCES_MANAGER] = error_sources_manager
+    error_watchers_manager = ErrorWatchersManager(hass)
+    error_watchers_manager.setup_watchers()
+    hass.data[DOMAIN][ERROR_WATCHERS_MANAGER] = error_watchers_manager
 
     return True
 
@@ -95,12 +95,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     It calls during integration's removing.
     """
-    hass.data[DOMAIN][ERROR_SOURCES_MANAGER].remove_sources()
+    hass.data[DOMAIN][ERROR_WATCHERS_MANAGER].remove_watchers()
 
-    hass.services.async_remove(DOMAIN, "send_report")
+    hass.services.async_remove(DOMAIN, PROBLEM_REPORT_SERVICE)
+
     hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
 
-    await async_remove_store(hass, STORAGE_NAME)
+    await async_remove_store(hass, CREDS_STORAGE_KEY)
     _LOGGER.debug("Credentials deleted from storage")
 
     return True

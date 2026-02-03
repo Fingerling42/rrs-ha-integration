@@ -6,7 +6,7 @@ from homeassistant.core import HomeAssistant
 from ...const import DOMAIN, PROBLEM_REPORT_SERVICE
 
 
-class ErrorSource(abc.ABC):
+class ErrorWatcher(abc.ABC):
     """Base class for error watchers"""
     def __init__(self, hass: HomeAssistant):
         self.hass = hass

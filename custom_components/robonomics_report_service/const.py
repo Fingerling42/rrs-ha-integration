@@ -1,7 +1,8 @@
 DOMAIN = "robonomics_report_service"
 PROBLEM_REPORT_SERVICE = "send_problem_report"
-ERROR_SOURCES_MANAGER = "error_sources_manages"
-STORAGE_NAME = "integrator_storage"
+ERROR_WATCHERS_MANAGER = "error_watchers_manager"
+
+CREDS_STORAGE_KEY = "creds_storage"
 
 CONF_PINATA_SECRET = "pinata_secret"
 CONF_PINATA_PUBLIC = "pinata_public"
@@ -19,5 +20,5 @@ LOG_FILE_NAME = "home-assistant.log"
 TRACES_FILE_NAME = ".storage/trace.saved_traces"
 LOGS_MAX_BYTES = 3 * 1024 * 1024
 
+CHECK_LOGS_TIMEOUT = 24 * 60        # Mins
 CHECK_ENTITIES_TIMEOUT = 24 * 60    # Mins
-CHECK_LOGS_TIMEOUT = 5         # Mins
