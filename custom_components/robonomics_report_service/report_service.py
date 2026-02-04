@@ -4,6 +4,7 @@ import asyncio
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
 from .const import (
     LOG_FILE_NAME,
@@ -11,7 +12,7 @@ from .const import (
     RRS_REPORT_TEMP_DIR,
 )
 
-from .ipfs import IPFS, PinataKeysRewoked
+from .ipfs import IPFS
 from .utils.file_handler import (
     create_temp_dir_with_encrypted_files,
     delete_temp_dir,
@@ -20,6 +21,17 @@ from .utils.file_handler import (
     create_temp_dir_with_issue
 )
 from .robonomics import Robonomics
+from .exceptions import (
+    ReportInputError,
+    EncryptedFilesStagingError,
+    IssueFileCreateError,
+    TempArchiveCreateError,
+    IPFSError,
+    PinataKeysRevokedError,
+    RobonomicsError,
+    StorageError,
+    EnvelopeRecipientEncryptError
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,13 +41,14 @@ class ReportService:
 
     def __init__(self,
         hass: HomeAssistant,
+        ipfs: IPFS,
         robonomics: Robonomics,
         problem_service_address: str,
     ):
         self.hass = hass
         self.robonomics = robonomics
         self.problem_service_address = problem_service_address
-        self.ipfs = IPFS(hass)
+        self.ipfs = ipfs
         self._send_lock = asyncio.Lock()
 
     async def async_init(self) -> None:
@@ -67,20 +80,35 @@ class ReportService:
                     temp_archive_path
                 )
 
-                if data_to_send is not None:
-                    await self.robonomics.send_datalog(data_to_send)
-                    _LOGGER.debug("A new report is added to datalog queue")
-                else:
-                    _LOGGER.warning("Pinata returned no data; report not sent")
+                await self.robonomics.send_datalog(data_to_send)
+                _LOGGER.debug("A new report is added to datalog queue")
 
-            except PinataKeysRewoked as e:
-                _LOGGER.error("Failed to pin report to Pinata: %s", e)
+            # Validation / cannot build report errors
+            except (
+                ReportInputError, IssueFileCreateError,
+                EncryptedFilesStagingError, EnvelopeRecipientEncryptError,
+            ) as e:
+                raise ServiceValidationError(str(e)) from e
 
-            except ValueError as e:
-                _LOGGER.warning("Report not sent: %s", e)
+            # Needs user action errors
+            except PinataKeysRevokedError as e:
+                raise HomeAssistantError(
+                    "Pinata API key revoked. " \
+                    "Update credentials in integration."
+                ) from e
 
-            except Exception:
+            # Operational / external systems errors
+            except (
+                IPFSError, TempArchiveCreateError,
+                RobonomicsError, StorageError
+            ) as e:
+                raise HomeAssistantError(str(e)) from e
+
+            except Exception as e:
                 _LOGGER.exception("Unexpected error while sending report")
+                raise HomeAssistantError(
+                    "Unexpected error while sending report"
+                ) from e
 
             finally:
                 await self._delete_temp_dir(temp_logs_dir)
@@ -103,13 +131,17 @@ class ReportService:
             temp_issue_dir = os.path.dirname(issue_path)
 
         if not files:
-            raise ValueError("No files found to include in report")
+            raise ReportInputError("No files found to include in report")
 
-        temp_logs_dir = (
-            await self._async_create_temp_dir_with_encrypted_files(files)
-        )
-
-        return temp_logs_dir, temp_issue_dir
+        try:
+            temp_logs_dir = (
+                await self._async_create_temp_dir_with_encrypted_files(files)
+            )
+            return temp_logs_dir, temp_issue_dir
+        except Exception:
+            if temp_issue_dir:
+                await self._delete_temp_dir(temp_issue_dir)
+            raise
 
     def _get_logs_files(self) -> list[str]:
         hass_config_path = self.hass.config.path()
@@ -142,17 +174,20 @@ class ReportService:
         )
 
     async def _clear_temp_dirs(self) -> None:
-        dirs_to_delete = await self.hass.async_add_executor_job(
-            get_temp_dirs, RRS_REPORT_TEMP_DIR
-        )
+        try:
+            dirs_to_delete = await self.hass.async_add_executor_job(
+                get_temp_dirs, RRS_REPORT_TEMP_DIR
+            )
+        except Exception:
+            return
+
         for dir_name in dirs_to_delete:
             await self._delete_temp_dir(dir_name)
 
     async def _delete_temp_dir(self, temp_dir: str | None) -> None:
         if not temp_dir:
             return
-        if os.path.exists(temp_dir):
-            await self.hass.async_add_executor_job(delete_temp_dir, temp_dir)
+        await self.hass.async_add_executor_job(delete_temp_dir, temp_dir)
 
     async def _async_create_temp_archive(
         self,

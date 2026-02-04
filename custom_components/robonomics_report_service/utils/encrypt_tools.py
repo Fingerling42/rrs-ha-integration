@@ -1,4 +1,3 @@
-import logging
 import json
 import secrets
 from typing import Union, Optional, Any
@@ -7,7 +6,11 @@ from nacl.secret import SecretBox
 from robonomicsinterface import Account
 from substrateinterface import Keypair, KeypairType
 
-_LOGGER = logging.getLogger(__name__)
+from ..exceptions import (
+    EnvelopeRecipientEncryptError,
+    EnvelopePackageDecryptError,
+    EnvelopeCryptoDecryptError
+)
 
 def multi_envelope_encrypt_data(
     data: str,
@@ -52,7 +55,13 @@ def multi_envelope_encrypt_data(
                 ss58_address=recipient_address,
                 crypto_type=KeypairType.ED25519
             )
+        except Exception as e:
+            raise EnvelopeRecipientEncryptError(
+                recipient_address,
+                "invalid public key"
+            ) from e
 
+        try:
             encrypted_secret_key = encrypt_msg(
                 secret_key,
                 sender_account.keypair,
@@ -61,13 +70,10 @@ def multi_envelope_encrypt_data(
 
             encryption_package["keys"][recipient_address] = encrypted_secret_key
         except Exception as e:
-            _LOGGER.warning(
-                "Failed to wrap secret key for recipient %s with error: %s",
-                recipient_address, e)
-
-    if not encryption_package["keys"]:
-        _LOGGER.error("No recipients could be encrypted, aborting")
-        raise ValueError("Failed to encrypt secret key for all recipients")
+            raise EnvelopeRecipientEncryptError(
+                recipient_address,
+                "secret key wrap failed"
+            ) from e
 
     return json.dumps(encryption_package)
 
@@ -87,25 +93,35 @@ def multi_envelope_decrypt_data(
     try:
         package_json = json.loads(encryption_package)
     except json.JSONDecodeError as e:
-        _LOGGER.warning("Envelope decrypt: invalid JSON package")
-        raise ValueError("Invalid encryption package JSON") from e
+        raise EnvelopePackageDecryptError(
+            "Invalid encryption package JSON"
+        ) from e
 
     try:
         encrypted_secret_keys = package_json["keys"]
         encrypted_data_hex = package_json["data"]
-    except (TypeError, ValueError) as e:
-        _LOGGER.warning("Envelope decrypt: missing required fields in package")
-        raise ValueError("Invalid encryption package structure") from e
+    except (TypeError, KeyError) as e:
+        raise EnvelopePackageDecryptError(
+            "Invalid encryption package structure"
+        ) from e
+
+    if (
+        not isinstance(encrypted_secret_keys, dict)
+        or not isinstance(encrypted_data_hex, str)
+    ):
+        raise EnvelopePackageDecryptError(
+            "Invalid encryption package structure"
+        )
+
 
     # Check if recipient address is authorized with secret key
     recipient_address = recipient_account.get_address()
     encrypted_secret_key = encrypted_secret_keys.get(recipient_address)
     if not encrypted_secret_key:
-        _LOGGER.warning(
-            "Envelope decrypt: recipient key not found for %s",
-            recipient_address
+        raise EnvelopePackageDecryptError(
+            "Recipient is not authorized for this package",
+            address=recipient_address
         )
-        raise ValueError("Recipient is not authorized for this package")
 
     # Get secret key from public-key decryption
 
@@ -121,8 +137,7 @@ def multi_envelope_decrypt_data(
             recipient_account.keypair
         )
     except Exception as e:
-        _LOGGER.warning("Envelope decrypt: failed to unwrap secret key")
-        raise ValueError("Failed to decrypt secret key") from e
+        raise EnvelopeCryptoDecryptError("decrypt_secret_key") from e
 
     try:
         # Deserialize encrypted data: remove 0x from beginning,
@@ -135,8 +150,7 @@ def multi_envelope_decrypt_data(
 
         return decrypted_data
     except Exception as e:
-        _LOGGER.warning("Envelope decrypt: failed to decrypt payload")
-        raise ValueError("Failed to decrypt payload") from e
+        raise EnvelopeCryptoDecryptError("decrypt_payload") from e
 
 def encrypt_msg(
     msg: Union[bytes, str],

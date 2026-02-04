@@ -1,11 +1,11 @@
-import logging
 from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.json import JSONEncoder
 from homeassistant.helpers.storage import Store
 
-_LOGGER = logging.getLogger(__name__)
+from ..exceptions import StorageError
+
 
 VERSION_STORAGE = 6
 
@@ -24,11 +24,14 @@ async def async_save_to_store(
 
     If the data has not changed this will generate one executor job
     """
-    current = await async_load_from_store(hass, key)
-    if current is None or current != data:
-        await _get_store_for_key(hass, key).async_save(data)
-        return
-    _LOGGER.debug("Content in .storage/%s was't changed", _get_store_key(key))
+    try:
+        current = await async_load_from_store(hass, key)
+        if current != data:
+            await _get_store_for_key(hass, key).async_save(data)
+    except Exception as e:
+        raise StorageError(
+            f"Failed to save store key: {_get_store_key(key)}"
+        ) from e
 
 
 async def async_load_from_store(
@@ -36,12 +39,22 @@ async def async_load_from_store(
         key: str
         ) -> dict[str, Any]:
     """Load the retained data from store and return de-serialized data."""
-    return await _get_store_for_key(hass, key).async_load() or {}
+    try:
+        return await _get_store_for_key(hass, key).async_load() or {}
+    except Exception as e:
+        raise StorageError(
+            f"Failed to load store key: {_get_store_key(key)}"
+        ) from e
 
 
 async def async_remove_store(hass: HomeAssistant, key: str) -> None:
     """Remove data from store for given key"""
-    await _get_store_for_key(hass, key).async_remove()
+    try:
+        await _get_store_for_key(hass, key).async_remove()
+    except Exception as e:
+        raise StorageError(
+            f"Failed to remove store key: {_get_store_key(key)}"
+        ) from e
 
 
 def _get_store_for_key(hass: HomeAssistant, key: str) -> Store[Any]:

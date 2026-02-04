@@ -1,5 +1,5 @@
 import logging
-from typing import Any
+from typing import Any, cast
 
 import voluptuous as vol
 from homeassistant import config_entries
@@ -19,6 +19,7 @@ from .const import (
 
 from .robonomics import Robonomics
 from .utils.ha_storage import async_save_to_store
+from .exceptions import StorageError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -75,14 +76,22 @@ class ReportServiceConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_seed(self, user_input=None) -> ConfigFlowResult:
         """Show the seed to user and configure Robonomics"""
+        errors: dict[str, str] = {}
 
         if self._sender_seed is None:
-            self._sender_seed = Robonomics.generate_seed()
+            try:
+                self._sender_seed = Robonomics.generate_seed()
+            except Exception:
+                errors["base"] = "seed_generation_failed"
 
-        keypair: Keypair = create_keypair(
-            self._sender_seed,
-            crypto_type=KeypairType.ED25519
-        )
+        if not errors:
+            try:
+                keypair: Keypair = create_keypair(
+                    cast(str, self._sender_seed),
+                    crypto_type=KeypairType.ED25519
+                )
+            except Exception:
+                errors["base"] = "keypair_generation_failed"
 
         # Show the form with the seed and related address if it hasn't already
         # been done, then save seed in _storage_data
@@ -92,19 +101,35 @@ class ReportServiceConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 step_id="seed",
                 data_schema=vol.Schema({}),
                 description_placeholders={
-                    "seed": self._sender_seed,
-                    "address": keypair.ss58_address
-                    },
+                    "seed": self._sender_seed or "",
+                    "address": keypair.ss58_address if not errors else "",
+                },
+                errors=errors,
             )
+
+        if errors:
+            return self.async_show_form(
+                step_id="seed",
+                data_schema=vol.Schema({}),
+                errors=errors
+            )
+
         self._storage_data[CONF_SENDER_SEED] = self._sender_seed
 
         # Save config to persistent storage without direct user access from UI
-        await async_save_to_store(
-            self.hass,
-            CREDS_STORAGE_KEY,
-            self._storage_data,
-        )
-        _LOGGER.debug("Credential saved to storage")
+        try:
+            await async_save_to_store(
+                self.hass,
+                CREDS_STORAGE_KEY,
+                self._storage_data,
+            )
+        except StorageError:
+            errors["base"] = "storage_save_failed"
+            return self.async_show_form(
+                step_id="seed",
+                data_schema=vol.Schema({}),
+                errors=errors
+            )
 
         # Make a mark in ConfigEntry that configuration is done
         return self.async_create_entry(

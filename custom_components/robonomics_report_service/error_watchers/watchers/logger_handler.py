@@ -31,7 +31,8 @@ class LoggerHandler(ErrorWatcher):
 
         self._lock = asyncio.Lock()
 
-        self.hass.data[SYSTEM_LOG_DOMAIN].fire_event = True
+        if SYSTEM_LOG_DOMAIN in self.hass.data:
+            self.hass.data[SYSTEM_LOG_DOMAIN].fire_event = True
 
     @callback
     def setup(self):
@@ -82,7 +83,7 @@ class LoggerHandler(ErrorWatcher):
 
         # Create unique signature of log for deduplication
         # based on name, level and message
-        signature_src = f"{name}|{level}|{message}"
+        signature_src = f"{name or ''}|{level or ''}|{message or ''}"
         signature = hashlib.sha256(
             signature_src.encode("utf-8", "ignore")
         ).hexdigest()[:16]
@@ -104,11 +105,9 @@ class LoggerHandler(ErrorWatcher):
                     "source": source,
                     "message": message,
                 }
-                _LOGGER.debug("LoggerHandler catched new log")
             else:
                 entry["count"] += 1
                 entry["last_seen"] = time_now
-                _LOGGER.debug("LoggerHandler catched repeated log")
 
     async def _flush(self, _=None) -> None:
         """Send one accumulated report per time window"""
@@ -167,5 +166,8 @@ class LoggerHandler(ErrorWatcher):
             self._period_start = period_end
 
         # Outside acyncio lock, trigger report sending
-        _LOGGER.debug("LoggerHandler is sending report")
+        _LOGGER.debug(
+            "LoggerHandler is sending report (unique=%d, total=%d)",
+            unique_number, total_number
+        )
         await self._send_report(issue)

@@ -38,6 +38,9 @@ class EntitiesStatusChecker(ErrorWatcher):
         self._period_start = dt_util.utcnow()
         self._first_run = True
 
+        # Locker to prevent parallel checking
+        self._lock = asyncio.Lock()
+
     @callback
     def setup(self) -> None:
         _LOGGER.debug("EntitiesStatusChecker start initializing")
@@ -60,77 +63,88 @@ class EntitiesStatusChecker(ErrorWatcher):
         _LOGGER.debug("EntitiesStatusChecker removed")
 
     async def _check_entities(self, _=None) -> None:
-        # Delay to wait for the entities for the first run
-        if self._first_run:
-            await asyncio.sleep(15)
-            self._first_run = False
 
-        period_end = dt_util.utcnow()
-        period_start = self._period_start
+        async with self._lock:
 
-        all_entity_ids = self._get_all_entity_ids()
+            # Delay to wait for the entities for the first run
+            if self._first_run:
+                await asyncio.sleep(15)
+                self._first_run = False
 
-        unavailable_ids: list[str] = []
+            period_end = dt_util.utcnow()
+            period_start = self._period_start
 
-        for entity_id in all_entity_ids:
+            all_entity_ids = self._get_all_entity_ids()
 
-            entity_entry = self.entity_registry.async_get(entity_id)
+            unavailable_ids: list[str] = []
 
-            # Entities that have been explicitly disabled are
-            # not considered problematic
-            if entity_entry is not None and entity_entry.disabled:
-                continue
+            for entity_id in all_entity_ids:
 
-            entity_state = self.hass.states.get(entity_id)
+                entity_entry = self.entity_registry.async_get(entity_id)
 
-            # Entity is unavaliable if explicit STATE_UNAVAILABLE
-            if (
-                entity_state is not None
-                and entity_state.state == STATE_UNAVAILABLE
-            ):
-                unavailable_ids.append(entity_id)
-                continue
+                # Entities that have been explicitly disabled are
+                # not considered problematic
+                if entity_entry is not None and entity_entry.disabled:
+                    continue
 
-        # If nothing to report, skip
-        if not unavailable_ids:
+                entity_state = self.hass.states.get(entity_id)
+
+                # Entity is unavaliable if explicit STATE_UNAVAILABLE
+                if (
+                    entity_state is not None
+                    and entity_state.state == STATE_UNAVAILABLE
+                ):
+                    unavailable_ids.append(entity_id)
+                    continue
+
+            # If nothing to report, skip
+            if not unavailable_ids:
+                self._period_start = period_end
+                return
+
+            # Check if entities is part of some device
+            unavailable_entities = self._group_by_device(unavailable_ids)
+
+            unavailable_counts = self._count_devices_entities(
+                unavailable_entities
+            )
+
+            # Gather issue
+            issue: dict[str, Any] = {
+                "type": "entities_health_problems",
+                "schema_version": 1,
+                "ts_start": period_start.isoformat(),
+                "ts_end": period_end.isoformat(),
+                "summary": (
+                    "Entities health: "
+                    f"{unavailable_counts['entities']} unavailable "
+                    f"({unavailable_counts['devices']} devices) "
+                    f"(interval {CHECK_ENTITIES_TIMEOUT} min)"
+                ),
+                "details": {
+                    "check_timeout_minutes": CHECK_ENTITIES_TIMEOUT,
+                    "counts": {
+                        "unavailable_counts": unavailable_counts,
+                    },
+                    "unavailable_entities": unavailable_entities,
+                    "preview": {
+                        "unavailable_entities": self._preview_devices(
+                            unavailable_entities
+                        ),
+                    },
+                },
+            }
+
             self._period_start = period_end
-            return
 
-        # Check if entities is part of some device
-        unavailable_entities = self._group_by_device(unavailable_ids)
+            _LOGGER.debug(
+                "EntitiesStatusChecker sending report "
+                "(unavailable_entities=%d, devices=%d)",
+                unavailable_counts["entities"],
+                unavailable_counts["devices"],
 
-        unavailable_counts = self._count_devices_entities(unavailable_entities)
-
-        # Gather issue
-        issue: dict[str, Any] = {
-            "type": "entities_health_problems",
-            "schema_version": 1,
-            "ts_start": period_start.isoformat(),
-            "ts_end": period_end.isoformat(),
-            "summary": (
-                "Entities health: "
-                f"{unavailable_counts['entities']} unavailable "
-                f"({unavailable_counts['devices']} devices) "
-                f"(interval {CHECK_ENTITIES_TIMEOUT} min)"
-            ),
-            "details": {
-                "check_timeout_minutes": CHECK_ENTITIES_TIMEOUT,
-                "counts": {
-                    "unavailable_counts": unavailable_counts,
-                },
-                "unavailable_entities": unavailable_entities,
-                "preview": {
-                    "unavailable_entities": self._preview_devices(
-                        unavailable_entities
-                    ),
-                },
-            },
-        }
-
-        self._period_start = period_end
-
-        _LOGGER.debug("EntitiesStatusChecker is sending report")
-        await self._send_report(issue)
+            )
+            await self._send_report(issue)
 
     def _get_all_entity_ids(self) -> set[str]:
 

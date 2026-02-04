@@ -1,4 +1,3 @@
-import logging
 import os
 import tempfile
 import shutil
@@ -11,8 +10,10 @@ from robonomicsinterface import Account
 
 from ..const import LOGS_MAX_BYTES
 from .encrypt_tools import multi_envelope_encrypt_data
+from ..exceptions import (
+    EncryptedFilesStagingError, TempArchiveCreateError, IssueFileCreateError
+)
 
-_LOGGER = logging.getLogger(__name__)
 
 def create_temp_dir_with_encrypted_files(
     dir_name_prefix: str,
@@ -30,61 +31,56 @@ def create_temp_dir_with_encrypted_files(
 
     :return:                    Path to the created directory
     """
+    if not file_paths:
+        raise EncryptedFilesStagingError(
+            "No files provided for encryption staging"
+        )
+
     # Create unique temp directory (ensured by mkdtemp)
     temp_dir_path = tempfile.mkdtemp(prefix=dir_name_prefix + "_")
-    _LOGGER.debug(
-        "Temp directory for report encryption is created: %s",
-        temp_dir_path
-    )
 
     # Encrypt each file and copy it to temp directory
-    written = 0
-    for file_path in file_paths:
-        try:
-            # Prepere metadata with file name
-            file_name = os.path.basename(file_path)
-            metadata = {
-                "orig_file_name": file_name
-            }
+    try:
+        for file_path in file_paths:
+            try:
+                # Prepere metadata with file name
+                file_name = os.path.basename(file_path)
+                metadata = {
+                    "orig_file_name": file_name
+                }
 
-            # Only last 3 MiB of logs are needed
-            data_bytes = _read_tail_bytes(file_path, LOGS_MAX_BYTES)
-            data = data_bytes.decode("utf-8", errors="replace")
+                # Only last 3 MiB of logs are needed
+                data_bytes = _read_tail_bytes(file_path, LOGS_MAX_BYTES)
+                data = data_bytes.decode("utf-8", errors="replace")
 
-            encrypted_data = multi_envelope_encrypt_data(
-                data,
-                sender_account,
-                list(recipient_addresses),
-                metadata
-            )
+                encrypted_data = multi_envelope_encrypt_data(
+                    data,
+                    sender_account,
+                    list(recipient_addresses),
+                    metadata
+                )
 
-            # Unique temp file with ecncypted data
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                suffix=".enc",
-                dir=temp_dir_path,
-                delete=False,
-                delete_on_close=False
-            ) as f:
-                f.write(encrypted_data)
-            written += 1
+                # Unique temp file with ecncypted data
+                with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    encoding="utf-8",
+                    suffix=".enc",
+                    dir=temp_dir_path,
+                    delete=False,
+                    delete_on_close=False
+                ) as f:
+                    f.write(encrypted_data)
 
-        except OSError:
-            _LOGGER.warning(
-                "Failed to read/write file for encryption %s",
-                file_path
-            )
-        except Exception:
-            _LOGGER.exception("Unexpected error while encrypting %s", file_path)
+            except Exception as e:
+                raise EncryptedFilesStagingError(
+                        "Failed to encrypt file",
+                        file_path=file_path
+                    ) from e
 
-    if written == 0:
-        _LOGGER.error("No files were encrypted; aborting")
-        raise ValueError("Failed to create any encrypted files")
-
-    _LOGGER.debug("Encrypted %d from %d files", written, len(file_paths))
-
-    return temp_dir_path
+        return temp_dir_path
+    except Exception:
+        shutil.rmtree(temp_dir_path, ignore_errors=True)
+        raise
 
 def delete_temp_dir(temp_dir_path: str) -> None:
     """
@@ -94,13 +90,12 @@ def delete_temp_dir(temp_dir_path: str) -> None:
     """
     try:
         shutil.rmtree(temp_dir_path)
-        _LOGGER.debug("Temp directory is removed: %s", temp_dir_path)
     except FileNotFoundError:
-        _LOGGER.debug(
-            "Temp directory has benn already removed: %s", temp_dir_path
-        )
+        # Temp directory has benn already removed
+        return
     except Exception:
-        _LOGGER.warning("Failed to remove temp directory: %s", temp_dir_path)
+        # Best-effort cleanup, ignore any failure
+        return
 
 def get_temp_dirs(dir_name_prefix: str) -> list[str]:
     """
@@ -121,7 +116,6 @@ def get_temp_dirs(dir_name_prefix: str) -> list[str]:
                 ):
                     found_temp_dirs_paths.append(temp_file.path)
     except OSError:
-        _LOGGER.warning("Failed to scan temp dir: %s", main_temp_dir_path)
         return []
 
     return found_temp_dirs_paths
@@ -161,11 +155,13 @@ def create_temp_archive(
                 if not entry.is_file():
                     continue
                 zip_file.write(filename=entry.path, arcname=entry.name)
-    except Exception:
-        shutil.rmtree(temp_archive_dir_path, ignore_errors=True)
-        raise
 
-    return temp_archive_path
+        return temp_archive_path
+    except Exception as e:
+        shutil.rmtree(temp_archive_dir_path, ignore_errors=True)
+        raise TempArchiveCreateError(
+            f"Failed to create archive from directory: {dir_to_archive}"
+        ) from e
 
 def create_temp_dir_with_issue(
         issue: dict[str, Any],
@@ -190,11 +186,14 @@ def create_temp_dir_with_issue(
         with open(issue_path, "w", encoding="utf-8") as f:
             f.write(payload)
 
+        return issue_path
+
     except (OSError, TypeError) as e:
         shutil.rmtree(temp_issue_dir_path, ignore_errors=True)
-        raise ValueError(f"Failed to create issue file: {e}") from e
+        raise IssueFileCreateError(
+            "Failed to create issue description file"
+        ) from e
 
-    return issue_path
 
 def _read_tail_bytes(path: str, max_bytes: int) -> bytes:
     """Collect only last max_bytes of data from file"""
