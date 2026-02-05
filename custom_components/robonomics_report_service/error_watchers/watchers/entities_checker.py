@@ -108,10 +108,11 @@ class EntitiesStatusChecker(ErrorWatcher):
             unavailable_counts = self._count_devices_entities(
                 unavailable_entities
             )
-
+            email = await self._get_email()
             # Gather issue
             issue: dict[str, Any] = {
                 "type": "entities_health_problems",
+                "email": email,
                 "schema_version": 1,
                 "ts_start": period_start.isoformat(),
                 "ts_end": period_end.isoformat(),

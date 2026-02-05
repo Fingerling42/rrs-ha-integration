@@ -5,7 +5,14 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
-from ...const import DOMAIN, PROBLEM_REPORT_SERVICE
+from ...const import (
+    DOMAIN,
+    PROBLEM_REPORT_SERVICE,
+    CREDS_STORAGE_KEY,
+    CONF_SENDER_EMAIL
+)
+
+from ...utils.ha_storage import async_load_from_store
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -22,6 +29,12 @@ class ErrorWatcher(abc.ABC):
     @abc.abstractmethod
     def remove(self):
         """Draft to stop watcher"""
+
+    async def _get_email(self) -> str | None:
+        creds_storage = await async_load_from_store(
+            self.hass, CREDS_STORAGE_KEY)
+        email = creds_storage.get(CONF_SENDER_EMAIL)
+        return email
 
     async def _send_report(self, issue: dict[str, Any]):
         """Call send_report HA service (fire-and-forget but error-aware)."""

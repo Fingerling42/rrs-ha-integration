@@ -13,6 +13,7 @@ from .const import (
     CONF_SENDER_SEED,
     CONF_PINATA_SECRET,
     CONF_PINATA_PUBLIC,
+    CONF_SENDER_EMAIL,
     PROBLEM_SERVICE_ROBONOMICS_ADDRESS,
     OWNER_ADDRESS,
     )
@@ -28,6 +29,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         vol.Required(PROBLEM_SERVICE_ROBONOMICS_ADDRESS): str,
         vol.Required(CONF_PINATA_PUBLIC): str,
         vol.Required(CONF_PINATA_SECRET): str,
+        vol.Optional(CONF_SENDER_EMAIL): str,
         vol.Optional(OWNER_ADDRESS): str,
     }
 )

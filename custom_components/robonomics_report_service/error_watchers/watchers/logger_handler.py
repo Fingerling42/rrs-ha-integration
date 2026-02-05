@@ -142,8 +142,10 @@ class LoggerHandler(ErrorWatcher):
                 )
 
             # Gather issue
+            email = await self._get_email()
             issue: dict[str, Any] = {
                 "type": "accumulated_system_log_problems",
+                "email": email,
                 "schema_version": 1,
                 "ts_start": self._period_start.isoformat(),
                 "ts_end": period_end.isoformat(),
