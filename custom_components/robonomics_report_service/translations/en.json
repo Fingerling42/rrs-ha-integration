@@ -1,21 +1,22 @@
 {
+    "title": "Robonomics Report Service",
     "config": {
         "step": {
             "user": {
                 "title": "Robonomics Report Service",
-                "description": "Enter your e-mail address to pay for the subscription.",
+                "description": "Enter data (for integrator only)",
                 "data": {
-                    "email": "E-mail Address",
-                    "phone_number": "Phone number (Optional)"
+                    "problem_service_robonomics_address": "Robonomics address of integrator problem service",
+                    "pinata_public": "Pinata public key",
+                    "pinata_secret": "Pinata secret key",
+                    "sender_email": "(Optional) E-mail for receiving solutions to problem reports",
+                    "subscription_owner_robonomics_address": "(Optional) Robonomics address of subscription owner"
                 }
             },
             "seed": {
                 "title": "Robonomics Report Service",
-                "description": "Save your mnemonic seed safely \n\n`\n{seed}\n`"
+                "description": "Save the mnemonic seed for this HA instanse safely.\n\n**Mnemonic seed**\n```\n{seed}\n```\n\n**Robonomics address**\n```\n{address}\n```"
             }
-        },
-        "progress": {
-            "wait_for_payment": "The letter with payment information was sent to your e-mail address. Pay for the subscription to continue."
         },
         "abort": {
             "already_configured": "[%key:common::config_flow::abort::already_configured_service%]"

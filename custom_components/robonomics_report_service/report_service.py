@@ -1,163 +1,219 @@
-import base64
 import logging
-import asyncio
 import os
-import json
-import typing as tp
+import asyncio
+from typing import Any
 
-from homeassistant.core import ServiceCall, HomeAssistant
-from homeassistant.components.system_log import DOMAIN as SYSTEM_LOG_DOMAIN
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
 from .const import (
     LOG_FILE_NAME,
     TRACES_FILE_NAME,
-    IPFS_PROBLEM_REPORT_FOLDER,
-    PROBLEM_SERVICE_ROBONOMICS_ADDRESS,
-    DOMAIN,
-    PROBLEM_REPORT_SERVICE,
-    SERVICE_PAID,
+    RRS_REPORT_TEMP_DIR,
 )
-from .ipfs import IPFS, PinataKeysRewoked
-from .utils import (
+
+from .ipfs import IPFS
+from .utils.file_handler import (
     create_temp_dir_with_encrypted_files,
-    encrypt_message,
     delete_temp_dir,
-    get_tempdir_filenames,
+    get_temp_dirs,
+    create_temp_archive,
+    create_temp_dir_with_issue
 )
 from .robonomics import Robonomics
-from .libp2p import LibP2P
-from .report_model import ReportData, ReportStatus
-from .rws_registration import RWSRegistrationManager
-
+from .exceptions import (
+    ReportInputError,
+    EncryptedFilesStagingError,
+    IssueFileCreateError,
+    TempArchiveCreateError,
+    IPFSError,
+    PinataKeysRevokedError,
+    RobonomicsError,
+    StorageError,
+    EnvelopeRecipientEncryptError
+)
 
 _LOGGER = logging.getLogger(__name__)
 
 
-
 class ReportService:
-    def __init__(self, hass: HomeAssistant, robonomics: Robonomics, libp2p: LibP2P):
+    """Main class to pass HA logs to Robonomics parachain"""
+
+    def __init__(self,
+        hass: HomeAssistant,
+        ipfs: IPFS,
+        robonomics: Robonomics,
+        problem_service_address: str,
+    ):
         self.hass = hass
         self.robonomics = robonomics
-        self.ipfs = IPFS(hass)
-        self.libp2p = libp2p
-        self._pending_reports: dict[str, ReportData] = {}
-        self._requesting_new_pinata_creds = False
+        self.problem_service_address = problem_service_address
+        self.ipfs = ipfs
+        self._send_lock = asyncio.Lock()
 
-    async def register(self) -> None:
-        self.hass.services.async_register(
-            DOMAIN, PROBLEM_REPORT_SERVICE, self.send_problem_report
-        )
-        self.libp2p.register_report_handler(self._handle_report_response)
-        await self._clear_tempdirs()
+    async def async_init(self) -> None:
+        """Initial routine in async style"""
 
-    async def send_problem_report(self, call: ServiceCall) -> None:
-        _LOGGER.debug(
-            f"send problem service with logs: {not call.data.get('only_description')}: {call.data.get('description')}"
-        )
-        if call.data.get("only_description"):
-            data_to_send = self._create_data_for_repeated_errors(
-                call.data.get("description")
-            )
-        else:
-            data_to_send = await self._create_data_for_errors_with_logs(call.data)
-        if data_to_send is not None:
-            new_report = ReportData.create(data_to_send, call.data.get("description"))
-            self._pending_reports[new_report.id] = new_report
-            await self.libp2p.send_report(
-                new_report.encrypted_data, new_report.id
-            )
+        await self._clear_temp_dirs()
 
-    async def _handle_report_response(self, report_id: str, response: dict) -> None:
-        if not response["datalog"]:
-            self._pending_reports.pop(report_id)
-            _LOGGER.debug(f"Report {report_id} is finished without datalog")
-        else:
-            report = self._pending_reports.get(report_id)
-            _LOGGER.debug(f"Report {report_id} will be sent in datalog, report: {report}")
-            if report:
-                asyncio.ensure_future(self._send_report_to_datalog(report, response["ticket_ids"]))
+    async def send_report(self, issue: dict[str, Any] | None = None) -> None:
+        """Send report with issue/logs as datalog"""
 
-    async def _send_report_to_datalog(self, report: ReportData, ticket_ids: list) -> None:
-        if "home-assistant.log" in report.encrypted_data:
-            _LOGGER.debug(f"Report {report.id} has encrypted logs")
-            await self.robonomics.send_datalog(report.encrypted_data)
-        else:
-            _LOGGER.debug(f"Report {report.id} doesn't have encrypted logs")
-            data_to_send = await self._create_data_for_errors_with_logs({"description": report.description})
-            data_to_send["ticket_ids"] = ticket_ids.copy()
-            await self.robonomics.send_datalog(data_to_send)
+        _LOGGER.debug("Sending a new report is started")
 
-    async def _create_data_for_errors_with_logs(self, issue_description: dict) -> dict:
-        try:
-            tempdir = await self._create_temp_dir_with_report_data(issue_description)
-            while self._requesting_new_pinata_creds:
-                await asyncio.sleep(1)
-            data_to_send = await self.ipfs.pin_to_pinata(tempdir)
-        except PinataKeysRewoked:
-            self._requesting_new_pinata_creds = True
-            await RWSRegistrationManager.request_new_pinata_creds(self.hass, self.robonomics, self.libp2p)
-            self._requesting_new_pinata_creds = False
-            data_to_send = await self.ipfs.pin_to_pinata(tempdir)
-        finally:
-            await self._remove_tempdir(tempdir)
-        return data_to_send
+        temp_logs_dir: str | None = None
+        temp_archive_dir: str | None = None
+        temp_issue_dir: str | None = None
 
-    def _create_data_for_repeated_errors(self, description: dict) -> dict:
-        encrypted = self.robonomics.encrypt_for_integrator({"description": description})
-        return {"issue_description.json": encrypted}
+        async with self._send_lock:
+            try:
+                temp_logs_dir, temp_issue_dir = (
+                    await self._get_temp_dir_with_encrypted_payload(issue)
+                )
 
-    async def _create_temp_dir_with_report_data(self, issue_description: dict) -> str:
+                temp_archive_path = await self._async_create_temp_archive(
+                    temp_logs_dir,
+                )
+                temp_archive_dir = os.path.dirname(temp_archive_path)
+
+                data_to_send = await self.ipfs.pin_file_to_pinata(
+                    temp_archive_path
+                )
+
+                await self.robonomics.send_datalog(data_to_send)
+                _LOGGER.debug("A new report is added to datalog queue")
+
+            # Validation / cannot build report errors
+            except (
+                ReportInputError, IssueFileCreateError,
+                EncryptedFilesStagingError, EnvelopeRecipientEncryptError,
+            ) as e:
+                raise ServiceValidationError(str(e)) from e
+
+            # Needs user action errors
+            except PinataKeysRevokedError as e:
+                raise HomeAssistantError(
+                    "Pinata API key revoked. " \
+                    "Update credentials in integration."
+                ) from e
+
+            # Operational / external systems errors
+            except (
+                IPFSError, TempArchiveCreateError,
+                RobonomicsError, StorageError
+            ) as e:
+                raise HomeAssistantError(str(e)) from e
+
+            except Exception as e:
+                _LOGGER.exception("Unexpected error while sending report")
+                raise HomeAssistantError(
+                    "Unexpected error while sending report"
+                ) from e
+
+            finally:
+                await self._delete_temp_dir(temp_logs_dir)
+                await self._delete_temp_dir(temp_archive_dir)
+                await self._delete_temp_dir(temp_issue_dir)
+
+    async def _get_temp_dir_with_encrypted_payload(
+            self, issue: dict[str, Any] | None
+        ) -> tuple[str, str | None]:
+
         files = self._get_logs_files()
-        tempdir: str = await self._async_create_temp_dir_with_encrypted_files(files)
-        await self._async_add_description_json(issue_description, tempdir)
-        return tempdir
 
-    def _get_logs_files(self) -> tp.List[str]:
+        temp_issue_dir: str | None = None
+
+        if issue is not None:
+            issue_path = (
+                await self._async_create_temp_dir_with_issue(issue)
+            )
+            files.append(issue_path)
+            temp_issue_dir = os.path.dirname(issue_path)
+
+        if not files:
+            raise ReportInputError("No files found to include in report")
+
+        try:
+            temp_logs_dir = (
+                await self._async_create_temp_dir_with_encrypted_files(files)
+            )
+            return temp_logs_dir, temp_issue_dir
+        except Exception:
+            if temp_issue_dir:
+                await self._delete_temp_dir(temp_issue_dir)
+            raise
+
+    def _get_logs_files(self) -> list[str]:
         hass_config_path = self.hass.config.path()
         files = []
-        if os.path.isfile(f"{hass_config_path}/{LOG_FILE_NAME}"):
-            files.append(f"{hass_config_path}/{LOG_FILE_NAME}")
-        if os.path.isfile(f"{hass_config_path}/{TRACES_FILE_NAME}"):
-            files.append(f"{hass_config_path}/{TRACES_FILE_NAME}")
+
+        log_path = os.path.join(hass_config_path, LOG_FILE_NAME)
+        traces_path = os.path.join(hass_config_path, TRACES_FILE_NAME)
+
+        if os.path.isfile(log_path):
+            files.append(log_path)
+        if os.path.isfile(traces_path):
+            files.append(traces_path)
+
         return files
 
     async def _async_create_temp_dir_with_encrypted_files(
-        self, files: tp.List[str]
+        self,
+        files: list[str]
     ) -> str:
         return await self.hass.async_add_executor_job(
             self._create_temp_dir_with_encrypted_files, files
         )
 
-    def _create_temp_dir_with_encrypted_files(self, files: tp.List[str]) -> str:
+    def _create_temp_dir_with_encrypted_files(self, files: list[str]) -> str:
         return create_temp_dir_with_encrypted_files(
-            IPFS_PROBLEM_REPORT_FOLDER,
+            RRS_REPORT_TEMP_DIR,
             files,
-            self.robonomics.sender_seed,
-            PROBLEM_SERVICE_ROBONOMICS_ADDRESS,
+            self.robonomics.sender_account,
+            [self.problem_service_address],
         )
 
-    async def _async_add_description_json(self, call_data: dict, tempdir: str) -> None:
-        await self.hass.async_add_executor_job(
-            self._add_description_json, call_data, tempdir
+    async def _clear_temp_dirs(self) -> None:
+        try:
+            dirs_to_delete = await self.hass.async_add_executor_job(
+                get_temp_dirs, RRS_REPORT_TEMP_DIR
+            )
+        except Exception:
+            return
+
+        for dir_name in dirs_to_delete:
+            await self._delete_temp_dir(dir_name)
+
+    async def _delete_temp_dir(self, temp_dir: str | None) -> None:
+        if not temp_dir:
+            return
+        await self.hass.async_add_executor_job(delete_temp_dir, temp_dir)
+
+    async def _async_create_temp_archive(
+        self,
+        dir_to_archive: str,
+    ) -> str:
+        return await self.hass.async_add_executor_job(
+            self._create_temp_archive, dir_to_archive
         )
 
-    def _add_description_json(self, call_data: dict, tempdir: str) -> None:
-        problem_text = call_data.get("description")
-        json_description = {
-            "description": problem_text,
-        }
-        encrypted_description = self.robonomics.multi_device_encrypt(json_description)
-        with open(f"{tempdir}/issue_description.json", "w") as f:
-            f.write(encrypted_description)
-
-    async def _clear_tempdirs(self) -> None:
-        dirs_to_delete = await self.hass.async_add_executor_job(
-            get_tempdir_filenames, IPFS_PROBLEM_REPORT_FOLDER
+    def _create_temp_archive(self, dir_to_archive: str) -> str:
+        return create_temp_archive(
+            dir_to_archive,
+            self.robonomics.sender_address,
+            RRS_REPORT_TEMP_DIR
         )
-        for dirname in dirs_to_delete:
-            await self._remove_tempdir(dirname)
 
-    async def _remove_tempdir(self, tempdir: str) -> None:
-        if os.path.exists(tempdir):
-            await self.hass.async_add_executor_job(delete_temp_dir, tempdir)
-            _LOGGER.debug(f"Temp directory {tempdir} was deleted")
+    async def _async_create_temp_dir_with_issue(
+        self,
+        issue: dict[str, Any]
+    ) -> str:
+        return await self.hass.async_add_executor_job(
+            self._create_temp_dir_with_issue, issue
+        )
+
+    def _create_temp_dir_with_issue(self, issue: dict[str, Any]) -> str:
+        return create_temp_dir_with_issue(
+            issue,
+            RRS_REPORT_TEMP_DIR
+        )

@@ -1,75 +1,139 @@
-import typing as tp
 import logging
+from typing import Any, cast
 
 import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.data_entry_flow import FlowResult
-from tenacity import retry, stop_after_attempt, wait_fixed, after_log
+from homeassistant.config_entries import ConfigFlowResult
+from robonomicsinterface import Keypair, KeypairType
+from robonomicsinterface.utils import create_keypair
 
 from .const import (
     DOMAIN,
-    CONF_EMAIL,
+    CREDS_STORAGE_KEY,
     CONF_SENDER_SEED,
-)
+    CONF_PINATA_SECRET,
+    CONF_PINATA_PUBLIC,
+    CONF_SENDER_EMAIL,
+    PROBLEM_SERVICE_ROBONOMICS_ADDRESS,
+    OWNER_ADDRESS,
+    )
+
 from .robonomics import Robonomics
-from .rws_registration import RWSRegistrationManager
-from .libp2p import LibP2P
+from .utils.ha_storage import async_save_to_store
+from .exceptions import StorageError
 
 _LOGGER = logging.getLogger(__name__)
 
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
-        vol.Required(CONF_EMAIL): str,
+        vol.Required(PROBLEM_SERVICE_ROBONOMICS_ADDRESS): str,
+        vol.Required(CONF_PINATA_PUBLIC): str,
+        vol.Required(CONF_PINATA_SECRET): str,
+        vol.Optional(CONF_SENDER_EMAIL): str,
+        vol.Optional(OWNER_ADDRESS): str,
     }
 )
 
 
-class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for the Report Service."""
+class ReportServiceConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    """
+    Handle a config flow for the Report Service during integration setup.
 
+    The class object exists only for the duration of the setup wizard,
+    and the result is a ConfigEntry that lives permanently.
+    """
+
+    # The schema version of the entries that it creates
+    # HA will call migrate method if the version changes
     VERSION = 1
 
     def __init__(self):
         self.seed_saved = False
+        self._sender_seed: str | None = None
+        self._storage_data = {}
 
-    async def async_step_user(self, user_input: tp.Optional[dict] = None) -> FlowResult:
-        """Handle the initial step of the configuration. Contains user's warnings.
-        :param user_input: Dict with the keys from STEP_USER_DATA_SCHEMA and values provided by user
-        :return: Service functions from HomeAssistant
-        """
+    async def async_step_user(
+            self,
+            user_input: dict[str, Any] | None = None
+            ) -> ConfigFlowResult:
+        """The initial step of the configuration"""
 
+        # Since it is needed exactly one integration instance, then assign
+        # a unique ID to the flow and abort the flow if another flow
+        # with the same unique ID is in progress
         await self.async_set_unique_id(DOMAIN)
+
+        # Abort the flow if a config entry with the same unique ID exists
         self._abort_if_unique_id_configured()
+
+        # Show the form to enter Pinata and Robonomics data
+        # if it hasn't already been done, then save data in _storage_data
         if user_input is None:
             return self.async_show_form(
                 step_id="user", data_schema=STEP_USER_DATA_SCHEMA
             )
-        self.user_data = user_input
-        sender_seed = Robonomics.generate_seed()
-        self.user_data[CONF_SENDER_SEED] = sender_seed
+        self._storage_data.update(user_input)
+
         return await self.async_step_seed()
 
-    async def async_step_seed(self, user_input: dict[str, tp.Any] | None = None):
+    async def async_step_seed(self, user_input=None) -> ConfigFlowResult:
+        """Show the seed to user and configure Robonomics"""
+        errors: dict[str, str] = {}
+
+        if self._sender_seed is None:
+            try:
+                self._sender_seed = Robonomics.generate_seed()
+            except Exception:
+                errors["base"] = "seed_generation_failed"
+
+        if not errors:
+            try:
+                keypair: Keypair = create_keypair(
+                    cast(str, self._sender_seed),
+                    crypto_type=KeypairType.ED25519
+                )
+            except Exception:
+                errors["base"] = "keypair_generation_failed"
+
+        # Show the form with the seed and related address if it hasn't already
+        # been done, then save seed in _storage_data
         if not self.seed_saved:
             self.seed_saved = True
             return self.async_show_form(
                 step_id="seed",
                 data_schema=vol.Schema({}),
-                description_placeholders={"seed": self.user_data[CONF_SENDER_SEED]},
+                description_placeholders={
+                    "seed": self._sender_seed or "",
+                    "address": keypair.ss58_address if not errors else "",
+                },
+                errors=errors,
             )
-        else:
-            robonomics = Robonomics(
+
+        if errors:
+            return self.async_show_form(
+                step_id="seed",
+                data_schema=vol.Schema({}),
+                errors=errors
+            )
+
+        self._storage_data[CONF_SENDER_SEED] = self._sender_seed
+
+        # Save config to persistent storage without direct user access from UI
+        try:
+            await async_save_to_store(
                 self.hass,
-                self.user_data[CONF_SENDER_SEED],
+                CREDS_STORAGE_KEY,
+                self._storage_data,
             )
-            await robonomics.setup()
-            libp2p = LibP2P(robonomics.sender_address)
-            await self.register_with_retry(robonomics, libp2p)
-            return self.async_create_entry(
-                title="Robonomics Report Service", data=self.user_data
+        except StorageError:
+            errors["base"] = "storage_save_failed"
+            return self.async_show_form(
+                step_id="seed",
+                data_schema=vol.Schema({}),
+                errors=errors
             )
 
-    @retry(stop=stop_after_attempt(4), wait=wait_fixed(4), after=after_log(_LOGGER, logging.WARNING))
-    async def register_with_retry(self, robonomics: Robonomics, libp2p: LibP2P):
-        await RWSRegistrationManager.register(self.hass, robonomics, libp2p, self.user_data[CONF_EMAIL])
-
+        # Make a mark in ConfigEntry that configuration is done
+        return self.async_create_entry(
+            title="Robonomics Report Service", data={"creds_configured": True}
+        )

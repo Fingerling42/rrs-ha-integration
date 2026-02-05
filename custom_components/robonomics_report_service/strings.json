@@ -1,14 +1,25 @@
 {
     "title": "Robonomics Report Service",
     "config": {
-      "step": {
-        "user": {
-          "title": "Robonomics Report Service",
-          "description": "Do you want to configure the Report Service?"
+        "step": {
+            "user": {
+                "title": "Robonomics Report Service",
+                "description": "Enter data (for integrator only)",
+                "data": {
+                    "problem_service_robonomics_address": "Robonomics address of integrator problem service",
+                    "pinata_public": "Pinata public key",
+                    "pinata_secret": "Pinata secret key",
+                    "sender_email": "(Optional) E-mail for receiving solutions to problem reports",
+                    "subscription_owner_robonomics_address": "(Optional) Robonomics address of subscription owner"
+                }
+            },
+            "seed": {
+                "title": "Robonomics Report Service",
+                "description": "Save the mnemonic seed for this HA instanse safely.\n\n**Mnemonic seed**\n```\n{seed}\n```\n\n**Robonomics address**\n```\n{address}\n```"
+            }
+        },
+        "abort": {
+            "already_configured": "[%key:common::config_flow::abort::already_configured_service%]"
         }
-      },
-      "abort": {
-        "already_configured": "[%key:common::config_flow::abort::already_configured_service%]"
-      }
     }
 }
