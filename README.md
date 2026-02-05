@@ -1,8 +1,19 @@
 # Robonomics Report Service
-Integration for Home Assistant that allows you to send error reports about your smart home to the Robonomics team.
+
+Integration for Home Assistant that allows to send error reports about client's smart home to a smart home integrator company.
+
+## How it works
+
+The integration creates error watchers that monitor Home Assistant for various issues and report them every 24 hours. Available watchers:
+
+* `LoggerHandler` — collects all logs with `critical`, `error`, and `warning` levels
+* `EntitiesStatusChecker` — collects information about entities with the `STATE_UNAVAILABLE` status
+
+The information collected by watchers is placed in a JSON issue and, along with the full logs, is encrypted with the integrator's address. The resulting encrypted files are placed in an archive and upload to [Pinata](https://pinata.cloud/), an IPFS pinning service. The resulting IPFS hash of the encrypted file report is sent to the [Robonomics](https://robonomics.network/) parachain as a datalog. After this, the integrator will see the report appear and will be able to download it to handle the problem with the client's smart home.
 
 ## Requirements
-* Libp2p proxy server. Installation instructions are [here](https://github.com/PinoutLTD/libp2p-ws-proxy).
+
+* Home Assistant 2025.12.3 or newer
 
 ## Installation
 
@@ -10,7 +21,7 @@ Integration for Home Assistant that allows you to send error reports about your 
 
 1.1 Using HACS
 
-In the HACS panel, navigate to `Integrations` and click on the three dots in the upper-right corner. Select `Custom Repositories`, insert the `https://github.com/PinoutLTD/rrs-ha-integration` to `Repository` and choose `Integration` as the type.
+In the HACS panel, navigate to `Integrations` and click on the three dots in the upper-right corner. Select `Custom Repositories`, insert the HTML link of this repository to `Repository` and choose `Integration` as the type.
 
 ![hacs](media/hacs.png)
 
@@ -18,7 +29,17 @@ In the HACS panel, navigate to `Integrations` and click on the three dots in the
 
 Clone the [repository](https://github.com/PinoutLTD/rrs-ha-integration) and copy `custom_components` folder to your Home Assistant config directory.
 
-**2. Restart HA to load the integration into HA.**
+**2. Restart Home Assistant to load the integration into Home Assistant.**
 
 **3. Go to Settings -> Devices & Services -> Integrations and click the 'Add Integration' button. Look for Robonomics Report Service and click to add it.**
 
+## Configuration
+
+![config](media/config.png)
+
+When adding the integration, you need to specify the following fields:
+
+* Robonomics address of integrator problem service — the address with which files will be encrypted at the client's site and decrypted at the integrator's site
+* Pinata public/secret key — Pinata credentials (API keys)
+* (Optional) E-mail for receiving solutions from integrator
+* (Optional) Robonomics address of subscription owner — by default, the integration creates its own Robonomics address for which you need to purchase a subscription; this field allows to specify another subscription to which you can add the integration address
