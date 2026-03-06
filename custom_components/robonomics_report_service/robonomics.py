@@ -14,7 +14,7 @@ from substrateinterface.exceptions import (
 )
 from tenacity import Retrying, stop_after_attempt, wait_fixed
 
-from .const import ROBONOMICS_WSS
+from .const import NETWORK_WSS
 
 from .ipfs import IPFS
 from .exceptions import RobonomicsError
@@ -28,6 +28,7 @@ class Robonomics:
     def __init__(
         self,
         hass: HomeAssistant,
+        network: str,
         ipfs: IPFS,
         sender_seed: str,
         owner_address: str | None = None,
@@ -35,7 +36,8 @@ class Robonomics:
         self.hass: HomeAssistant = hass
         self.ipfs: IPFS = ipfs
         self.sender_seed: str = sender_seed
-        self.current_wss: str = ROBONOMICS_WSS[0]
+        self.wss_endpoints: list[str] = NETWORK_WSS[network]
+        self.current_wss: str = self.wss_endpoints[0]
         self.sender_account: Account = Account(
             self.sender_seed,
             crypto_type=KeypairType.ED25519,
@@ -65,7 +67,7 @@ class Robonomics:
     def _retry_decorator(func: Callable):
         def wrapper(self, *args, **kwargs):
             last_exc: Exception | None = None
-            attempts = len(ROBONOMICS_WSS)
+            attempts = len(self.wss_endpoints)
 
             for attempt in Retrying(
                 wait=wait_fixed(2),
@@ -181,12 +183,12 @@ class Robonomics:
     def change_current_wss(self) -> None:
         """Set next current wss"""
 
-        current_index = ROBONOMICS_WSS.index(self.current_wss)
-        if current_index == (len(ROBONOMICS_WSS) - 1):
+        current_index = self.wss_endpoints.index(self.current_wss)
+        if current_index == (len(self.wss_endpoints) - 1):
             next_index = 0
         else:
             next_index = current_index + 1
-        self.current_wss = ROBONOMICS_WSS[next_index]
+        self.current_wss = self.wss_endpoints[next_index]
         _LOGGER.debug("New Robonomics ws is %s", self.current_wss)
         self.sender_account: Account = Account(
             seed=self.sender_seed,

@@ -11,7 +11,8 @@ from .const import (
     PROBLEM_SERVICE_ROBONOMICS_ADDRESS,
     OWNER_ADDRESS,
     ERROR_WATCHERS_MANAGER,
-    PROBLEM_REPORT_SERVICE
+    PROBLEM_REPORT_SERVICE,
+    CONF_NETWORK
 )
 
 from .robonomics import Robonomics
@@ -46,6 +47,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         ipfs = IPFS(hass)
         robonomics = Robonomics(
             hass,
+            creds_storage[CONF_NETWORK],
             ipfs,
             creds_storage[CONF_SENDER_SEED],
             creds_storage.get(OWNER_ADDRESS)

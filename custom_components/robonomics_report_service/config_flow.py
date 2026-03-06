@@ -4,6 +4,7 @@ from typing import Any, cast
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigFlowResult
+from homeassistant.helpers.selector import selector
 from robonomicsinterface import Keypair, KeypairType
 from robonomicsinterface.utils import create_keypair
 
@@ -16,6 +17,10 @@ from .const import (
     CONF_SENDER_EMAIL,
     PROBLEM_SERVICE_ROBONOMICS_ADDRESS,
     OWNER_ADDRESS,
+    CONF_NETWORK,
+    DEFAULT_NETWORK,
+    NETWORK_POLKADOT,
+    NETWORK_KUSAMA,
     )
 
 from .robonomics import Robonomics
@@ -26,6 +31,17 @@ _LOGGER = logging.getLogger(__name__)
 
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
+        vol.Required(CONF_NETWORK, default=DEFAULT_NETWORK): selector(
+            {
+                "select": {
+                    "options": [
+                        {"value": NETWORK_POLKADOT, "label": "Polkadot"},
+                        {"value": NETWORK_KUSAMA, "label": "Kusama"},
+                    ],
+                    "mode": "dropdown",
+                }
+            }
+        ),
         vol.Required(PROBLEM_SERVICE_ROBONOMICS_ADDRESS): str,
         vol.Required(CONF_PINATA_PUBLIC): str,
         vol.Required(CONF_PINATA_SECRET): str,
