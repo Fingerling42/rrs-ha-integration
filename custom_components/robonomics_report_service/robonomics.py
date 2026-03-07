@@ -1,23 +1,22 @@
 import asyncio
+import json
 import logging
 import time
-import json
-from typing import Callable
 from collections import deque
+from collections.abc import Callable
 
 from homeassistant.core import HomeAssistant
 from robonomicsinterface import Account, Datalog
 from substrateinterface import Keypair, KeypairType
 from substrateinterface.exceptions import (
+    ExtrinsicFailedException,
     SubstrateRequestException,
-    ExtrinsicFailedException
 )
 from tenacity import Retrying, stop_after_attempt, wait_fixed
 
 from .const import NETWORK_WSS
-
-from .ipfs import IPFS
 from .exceptions import RobonomicsError
+from .ipfs import IPFS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -132,15 +131,12 @@ class Robonomics:
                 data_to_send = self._datalog_queue.popleft()
 
                 try:
-                    await asyncio.to_thread(
-                        self._send_datalog,
-                        data_to_send
-                    )
+                    await asyncio.to_thread(self._send_datalog, data_to_send)
                 except RobonomicsError as e:
                     _LOGGER.warning(
                         "Datalog send failed "
                         "(will drop payload from queue): %s",
-                        e
+                        e,
                     )
                     try:
                         result = await self.ipfs.unpin_files_from_pinata(
@@ -151,11 +147,12 @@ class Robonomics:
 
                     if result and result.failed:
                         _LOGGER.warning(
-                            "Pinata cleanup incomplete after datalog " \
+                            "Pinata cleanup incomplete after datalog "
                             "failure (removed=%s/%s, failed=%s)",
-                            result.succeeded, result.attempted, result.failed
+                            result.succeeded,
+                            result.attempted,
+                            result.failed,
                         )
-
 
         finally:
             # In case the worker reached the end of the queue,
@@ -173,7 +170,7 @@ class Robonomics:
         # If no owner address is provided, use RWS of sender
         datalog = Datalog(
             self.sender_account,
-            rws_sub_owner=self._owner_address or self.sender_address
+            rws_sub_owner=self._owner_address or self.sender_address,
         )
 
         datalog.record(data_to_send)

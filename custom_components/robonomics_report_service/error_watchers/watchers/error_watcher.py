@@ -6,12 +6,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
 from ...const import (
+    CONF_SENDER_EMAIL,
+    CREDS_STORAGE_KEY,
     DOMAIN,
     PROBLEM_REPORT_SERVICE,
-    CREDS_STORAGE_KEY,
-    CONF_SENDER_EMAIL
 )
-
 from ...utils.ha_storage import async_load_from_store
 
 _LOGGER = logging.getLogger(__name__)
@@ -19,6 +18,7 @@ _LOGGER = logging.getLogger(__name__)
 
 class ErrorWatcher(abc.ABC):
     """Base class for error watchers"""
+
     def __init__(self, hass: HomeAssistant):
         self.hass = hass
 
@@ -32,7 +32,8 @@ class ErrorWatcher(abc.ABC):
 
     async def _get_email(self) -> str | None:
         creds_storage = await async_load_from_store(
-            self.hass, CREDS_STORAGE_KEY)
+            self.hass, CREDS_STORAGE_KEY
+        )
         email = creds_storage.get(CONF_SENDER_EMAIL)
         return email
 
@@ -46,7 +47,7 @@ class ErrorWatcher(abc.ABC):
                         DOMAIN,
                         PROBLEM_REPORT_SERVICE,
                         service_data=issue,
-                        blocking=True
+                        blocking=True,
                     )
                 )
             except (ServiceValidationError, HomeAssistantError) as e:

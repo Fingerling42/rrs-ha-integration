@@ -31,5 +31,5 @@ LOG_FILE_NAME = "home-assistant.log"
 TRACES_FILE_NAME = ".storage/trace.saved_traces"
 LOGS_MAX_BYTES = 3 * 1024 * 1024
 
-CHECK_LOGS_TIMEOUT = 24 * 60        # Mins
-CHECK_ENTITIES_TIMEOUT = 24 * 60    # Mins
+CHECK_LOGS_TIMEOUT = 24 * 60  # Mins
+CHECK_ENTITIES_TIMEOUT = 24 * 60  # Mins

@@ -9,23 +9,22 @@ from robonomicsinterface import Keypair, KeypairType
 from robonomicsinterface.utils import create_keypair
 
 from .const import (
-    DOMAIN,
-    CREDS_STORAGE_KEY,
-    CONF_SENDER_SEED,
-    CONF_PINATA_SECRET,
-    CONF_PINATA_PUBLIC,
-    CONF_SENDER_EMAIL,
-    PROBLEM_SERVICE_ROBONOMICS_ADDRESS,
-    OWNER_ADDRESS,
     CONF_NETWORK,
+    CONF_PINATA_PUBLIC,
+    CONF_PINATA_SECRET,
+    CONF_SENDER_EMAIL,
+    CONF_SENDER_SEED,
+    CREDS_STORAGE_KEY,
     DEFAULT_NETWORK,
-    NETWORK_POLKADOT,
+    DOMAIN,
     NETWORK_KUSAMA,
-    )
-
+    NETWORK_POLKADOT,
+    OWNER_ADDRESS,
+    PROBLEM_SERVICE_ROBONOMICS_ADDRESS,
+)
+from .exceptions import StorageError
 from .robonomics import Robonomics
 from .utils.ha_storage import async_save_to_store
-from .exceptions import StorageError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -69,9 +68,8 @@ class ReportServiceConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._storage_data = {}
 
     async def async_step_user(
-            self,
-            user_input: dict[str, Any] | None = None
-            ) -> ConfigFlowResult:
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         """The initial step of the configuration"""
 
         # Since it is needed exactly one integration instance, then assign
@@ -106,7 +104,7 @@ class ReportServiceConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             try:
                 keypair: Keypair = create_keypair(
                     cast(str, self._sender_seed),
-                    crypto_type=KeypairType.ED25519
+                    crypto_type=KeypairType.ED25519,
                 )
             except Exception:
                 errors["base"] = "keypair_generation_failed"
@@ -127,9 +125,7 @@ class ReportServiceConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if errors:
             return self.async_show_form(
-                step_id="seed",
-                data_schema=vol.Schema({}),
-                errors=errors
+                step_id="seed", data_schema=vol.Schema({}), errors=errors
             )
 
         self._storage_data[CONF_SENDER_SEED] = self._sender_seed
@@ -144,9 +140,7 @@ class ReportServiceConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         except StorageError:
             errors["base"] = "storage_save_failed"
             return self.async_show_form(
-                step_id="seed",
-                data_schema=vol.Schema({}),
-                errors=errors
+                step_id="seed", data_schema=vol.Schema({}), errors=errors
             )
 
         # Make a mark in ConfigEntry that configuration is done

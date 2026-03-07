@@ -1,26 +1,25 @@
 import logging
 
-from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.typing import ConfigType
 
 from .const import (
-    DOMAIN,
-    CREDS_STORAGE_KEY,
+    CONF_NETWORK,
     CONF_SENDER_SEED,
-    PROBLEM_SERVICE_ROBONOMICS_ADDRESS,
-    OWNER_ADDRESS,
+    CREDS_STORAGE_KEY,
+    DOMAIN,
     ERROR_WATCHERS_MANAGER,
+    OWNER_ADDRESS,
     PROBLEM_REPORT_SERVICE,
-    CONF_NETWORK
+    PROBLEM_SERVICE_ROBONOMICS_ADDRESS,
 )
-
-from .robonomics import Robonomics
-from .ipfs import IPFS
 from .error_watchers.error_watchers_manager import ErrorWatchersManager
-from .report_service import ReportService
-from .utils.ha_storage import async_remove_store, async_load_from_store
 from .exceptions import StorageError
+from .ipfs import IPFS
+from .report_service import ReportService
+from .robonomics import Robonomics
+from .utils.ha_storage import async_load_from_store, async_remove_store
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,7 +49,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             creds_storage[CONF_NETWORK],
             ipfs,
             creds_storage[CONF_SENDER_SEED],
-            creds_storage.get(OWNER_ADDRESS)
+            creds_storage.get(OWNER_ADDRESS),
         )
 
         # Prepare report service
@@ -58,18 +57,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             hass,
             ipfs,
             robonomics,
-            creds_storage[PROBLEM_SERVICE_ROBONOMICS_ADDRESS]
+            creds_storage[PROBLEM_SERVICE_ROBONOMICS_ADDRESS],
         )
         await report_service.async_init()
     except (StorageError, KeyError) as e:
         _LOGGER.error(
             "Failed to set up %s: missing/invalid stored credentials: %s",
-            DOMAIN, e
+            DOMAIN,
+            e,
         )
         return False
 
     except Exception:
-        _LOGGER.exception("Failed to set up %s due to unexpected error", DOMAIN)
+        _LOGGER.exception(
+            "Failed to set up %s due to unexpected error", DOMAIN
+        )
         return False
 
     # Register send_report as HA service
@@ -81,9 +83,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await report_service.send_report(issue=issue)
 
     hass.services.async_register(
-        DOMAIN,
-        PROBLEM_REPORT_SERVICE,
-        _handle_send_report
+        DOMAIN, PROBLEM_REPORT_SERVICE, _handle_send_report
     )
 
     # Configure and start manager for errors watchers
@@ -124,6 +124,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
 
     return True
+
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Called when the config entry is removed from Home Assistant."""

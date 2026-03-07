@@ -6,14 +6,12 @@ from homeassistant.helpers.storage import Store
 
 from ..exceptions import StorageError
 
-
 VERSION_STORAGE = 6
 
+
 async def async_save_to_store(
-        hass: HomeAssistant,
-        key: str,
-        data: dict[str, Any]
-        ) -> None:
+    hass: HomeAssistant, key: str, data: dict[str, Any]
+) -> None:
     """
     Generate dynamic data to store and save it to the filesystem.
 
@@ -35,9 +33,8 @@ async def async_save_to_store(
 
 
 async def async_load_from_store(
-        hass: HomeAssistant,
-        key: str
-        ) -> dict[str, Any]:
+    hass: HomeAssistant, key: str
+) -> dict[str, Any]:
     """Load the retained data from store and return de-serialized data."""
     try:
         return await _get_store_for_key(hass, key).async_load() or {}
@@ -66,6 +63,7 @@ def _get_store_for_key(hass: HomeAssistant, key: str) -> Store[Any]:
         encoder=JSONEncoder,
         atomic_writes=True,
     )
+
 
 def _get_store_key(key: str) -> str:
     """Return the key to use with homeassistant.helpers.storage.Storage."""

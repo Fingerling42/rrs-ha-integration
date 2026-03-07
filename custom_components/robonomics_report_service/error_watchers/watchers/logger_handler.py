@@ -1,23 +1,24 @@
-import logging
 import asyncio
 import hashlib
+import logging
 from datetime import timedelta
 from typing import Any
 
-from homeassistant.core import HomeAssistant, callback, Event
+import homeassistant.util.dt as dt_util
 from homeassistant.components.system_log import DOMAIN as SYSTEM_LOG_DOMAIN
 from homeassistant.components.system_log import EVENT_SYSTEM_LOG
+from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_interval
-import homeassistant.util.dt as dt_util
 
+from ...const import CHECK_LOGS_TIMEOUT, DOMAIN
 from .error_watcher import ErrorWatcher
-from ...const import DOMAIN, CHECK_LOGS_TIMEOUT
 
 _LOGGER = logging.getLogger(__name__)
 
 
 class LoggerHandler(ErrorWatcher):
     """Watcher that react to all warning/errors in logs"""
+
     def __init__(self, hass: HomeAssistant):
         super().__init__(hass)
 
@@ -39,15 +40,12 @@ class LoggerHandler(ErrorWatcher):
         _LOGGER.debug("LoggerHandler initialized")
         # Create listener for event with appearing HA log
         self._event_listener = self.hass.bus.async_listen(
-            EVENT_SYSTEM_LOG,
-            self._catch_new_log
+            EVENT_SYSTEM_LOG, self._catch_new_log
         )
 
         # Create timer to flush accumulated log records to send_report service
         self._flush_timer_listener = async_track_time_interval(
-            self.hass,
-            self._flush,
-            timedelta(minutes=CHECK_LOGS_TIMEOUT)
+            self.hass, self._flush, timedelta(minutes=CHECK_LOGS_TIMEOUT)
         )
 
     @callback
@@ -112,7 +110,6 @@ class LoggerHandler(ErrorWatcher):
     async def _flush(self, _=None) -> None:
         """Send one accumulated report per time window"""
         async with self._lock:
-
             # If there were no logs, restart the timer
             if not self._accumulated_records:
                 self._period_start = dt_util.utcnow()
@@ -137,8 +134,8 @@ class LoggerHandler(ErrorWatcher):
             by_level_events: dict[str, int] = {}
             for entry in entries:
                 level = entry.get("level") or "UNKNOWN"
-                by_level_events[level] = (
-                    by_level_events.get(level, 0) + int(entry.get("count", 0))
+                by_level_events[level] = by_level_events.get(level, 0) + int(
+                    entry.get("count", 0)
                 )
 
             # Gather issue
@@ -170,6 +167,7 @@ class LoggerHandler(ErrorWatcher):
         # Outside acyncio lock, trigger report sending
         _LOGGER.debug(
             "LoggerHandler is sending report (unique=%d, total=%d)",
-            unique_number, total_number
+            unique_number,
+            total_number,
         )
         await self._send_report(issue)
