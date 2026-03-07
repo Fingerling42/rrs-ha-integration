@@ -5,7 +5,11 @@
   "codeowners": ["@pinoutcloud"],
   "version": "0.7.0",
   "dependencies": ["system_log", "recorder"],
-  "requirements": ["robonomics-interface==2.0.0", "pinatapy-vourhey==0.1.9", "tenacity==8.2.2"],
+  "requirements": [
+    "robonomics-interface==2.0.0",
+    "pinatapy-vourhey==0.1.9",
+    "tenacity==8.5.0"
+  ],
   "documentation": "https://wiki.robonomics.network/",
   "issue_tracker": "https://github.com/PinoutLTD/rrs-ha-integration/issues",
   "integration_type": "service",
