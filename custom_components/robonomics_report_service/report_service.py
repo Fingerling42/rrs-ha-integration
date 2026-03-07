@@ -7,7 +7,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
 from .const import (
-    LOG_FILE_NAME,
+    LOGS_BACKUP_PATH,
+    LOGS_PATH,
     RRS_REPORT_TEMP_DIR,
     TRACES_FILE_NAME,
 )
@@ -147,14 +148,16 @@ class ReportService:
             raise
 
     def _get_logs_files(self) -> list[str]:
-        hass_config_path = self.hass.config.path()
         files = []
 
-        log_path = os.path.join(hass_config_path, LOG_FILE_NAME)
-        traces_path = os.path.join(hass_config_path, TRACES_FILE_NAME)
+        current_log_path = self.hass.config.path(LOGS_PATH)
+        backup_log_path = self.hass.config.path(LOGS_BACKUP_PATH)
+        traces_path = self.hass.config.path(TRACES_FILE_NAME)
 
-        if os.path.isfile(log_path):
-            files.append(log_path)
+        if os.path.isfile(current_log_path):
+            files.append(current_log_path)
+        if os.path.isfile(backup_log_path):
+            files.append(backup_log_path)
         if os.path.isfile(traces_path):
             files.append(traces_path)
 

@@ -27,9 +27,11 @@ NETWORK_WSS = {
 }
 
 RRS_REPORT_TEMP_DIR = "rrs_report_temp_dir"
-LOG_FILE_NAME = "home-assistant.log"
 TRACES_FILE_NAME = ".storage/trace.saved_traces"
-LOGS_MAX_BYTES = 3 * 1024 * 1024
+
+REPORT_FILE_MAX_BYTES = 3 * 1024 * 1024
+LOGS_PATH = f"{DOMAIN}/home-assistant.log"
+LOGS_BACKUP_PATH = f"{DOMAIN}/home-assistant.log.1"
 
 CHECK_LOGS_TIMEOUT = 24 * 60  # Mins
 CHECK_ENTITIES_TIMEOUT = 24 * 60  # Mins

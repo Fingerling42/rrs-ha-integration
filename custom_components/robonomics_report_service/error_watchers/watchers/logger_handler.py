@@ -1,6 +1,8 @@
 import asyncio
 import hashlib
+import json
 import logging
+import os
 from datetime import timedelta
 from typing import Any
 
@@ -10,7 +12,13 @@ from homeassistant.components.system_log import EVENT_SYSTEM_LOG
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_interval
 
-from ...const import CHECK_LOGS_TIMEOUT, DOMAIN
+from ...const import (
+    CHECK_LOGS_TIMEOUT,
+    DOMAIN,
+    LOGS_BACKUP_PATH,
+    LOGS_PATH,
+    REPORT_FILE_MAX_BYTES,
+)
 from .error_watcher import ErrorWatcher
 
 _LOGGER = logging.getLogger(__name__)
@@ -30,7 +38,12 @@ class LoggerHandler(ErrorWatcher):
         # Buffer for accumulated log records
         self._accumulated_records: dict[str, dict[str, Any]] = {}
 
-        self._lock = asyncio.Lock()
+        self._acc_lock = asyncio.Lock()
+        self._log_lock = asyncio.Lock()
+
+        # Main log path and path for log rotation
+        self._log_path = self.hass.config.path(LOGS_PATH)
+        self._backup_log_path = self.hass.config.path(LOGS_BACKUP_PATH)
 
         if SYSTEM_LOG_DOMAIN in self.hass.data:
             self.hass.data[SYSTEM_LOG_DOMAIN].fire_event = True
@@ -65,6 +78,16 @@ class LoggerHandler(ErrorWatcher):
 
         log = log_event.data
 
+        try:
+            await self._write_raw_log_line(log)
+        except Exception:
+            _LOGGER.debug(
+                "LoggerHandler failed to write raw log line", exc_info=True
+            )
+
+        await self._collect_issue_record(log)
+
+    async def _collect_issue_record(self, log: dict[str, Any]) -> None:
         # Check only logs that are not related to the report service
         name = log.get("name")
         if isinstance(name, str) and DOMAIN in name:
@@ -86,18 +109,22 @@ class LoggerHandler(ErrorWatcher):
             signature_src.encode("utf-8", "ignore")
         ).hexdigest()[:16]
 
-        time_now = dt_util.utcnow().isoformat()
+        event_ts = log.get("timestamp")
+        if event_ts:
+            ts = dt_util.utc_from_timestamp(event_ts).isoformat()
+        else:
+            ts = dt_util.utcnow().isoformat()
 
         # Add log record if it is unique
         # or modify count and last seen time otherwise
-        async with self._lock:
+        async with self._acc_lock:
             entry = self._accumulated_records.get(signature)
             if entry is None:
                 self._accumulated_records[signature] = {
                     "signature": signature,
                     "count": 1,
-                    "first_seen": time_now,
-                    "last_seen": time_now,
+                    "first_seen": ts,
+                    "last_seen": ts,
                     "level": level,
                     "name": name,
                     "source": source,
@@ -105,11 +132,39 @@ class LoggerHandler(ErrorWatcher):
                 }
             else:
                 entry["count"] += 1
-                entry["last_seen"] = time_now
+                entry["last_seen"] = ts
+
+    async def _write_raw_log_line(self, log: dict[str, Any]) -> None:
+        """Write one system_log event to integration log file"""
+
+        event_ts = log.get("timestamp")
+        if event_ts:
+            ts = dt_util.utc_from_timestamp(event_ts).isoformat()
+        else:
+            ts = dt_util.utcnow().isoformat()
+
+        payload: dict[str, Any] = {
+            "ts": ts,
+            "level": log.get("level"),
+            "name": log.get("name"),
+            "source": log.get("source"),
+            "message": log.get("message"),
+        }
+
+        exception = log.get("exception")
+        if exception:
+            payload["exception"] = exception
+
+        line = json.dumps(payload, ensure_ascii=False) + "\n"
+
+        async with self._log_lock:
+            await self.hass.async_add_executor_job(
+                self._append_log_with_rotation, line
+            )
 
     async def _flush(self, _=None) -> None:
         """Send one accumulated report per time window"""
-        async with self._lock:
+        async with self._acc_lock:
             # If there were no logs, restart the timer
             if not self._accumulated_records:
                 self._period_start = dt_util.utcnow()
@@ -171,3 +226,31 @@ class LoggerHandler(ErrorWatcher):
             total_number,
         )
         await self._send_report(issue)
+
+    def _ensure_log_dir(self) -> None:
+        os.makedirs(os.path.dirname(self._log_path), exist_ok=True)
+
+    def _append_log_with_rotation(self, line: str) -> None:
+        """Append line to current log file with size-based rotation"""
+
+        self._ensure_log_dir()
+
+        encoded_line = line.encode("utf-8", errors="replace")
+
+        if len(encoded_line) > REPORT_FILE_MAX_BYTES:
+            encoded_line = encoded_line[-REPORT_FILE_MAX_BYTES:]
+
+        current_logfile_size = (
+            os.path.getsize(self._log_path)
+            if os.path.isfile(self._log_path)
+            else 0
+        )
+
+        if current_logfile_size + len(encoded_line) > REPORT_FILE_MAX_BYTES:
+            if os.path.isfile(self._backup_log_path):
+                os.remove(self._backup_log_path)
+            if os.path.isfile(self._log_path):
+                os.replace(self._log_path, self._backup_log_path)
+
+        with open(self._log_path, "ab") as logfile:
+            logfile.write(encoded_line)

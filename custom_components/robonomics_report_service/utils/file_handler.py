@@ -8,7 +8,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 import homeassistant.util.dt as dt_util
 from robonomicsinterface import Account
 
-from ..const import LOGS_MAX_BYTES
+from ..const import REPORT_FILE_MAX_BYTES
 from ..exceptions import (
     EncryptedFilesStagingError,
     IssueFileCreateError,
@@ -50,7 +50,7 @@ def create_temp_dir_with_encrypted_files(
                 metadata = {"orig_file_name": file_name}
 
                 # Only last 3 MiB of logs are needed
-                data_bytes = _read_tail_bytes(file_path, LOGS_MAX_BYTES)
+                data_bytes = _read_tail_bytes(file_path, REPORT_FILE_MAX_BYTES)
                 data = data_bytes.decode("utf-8", errors="replace")
 
                 encrypted_data = multi_envelope_encrypt_data(
