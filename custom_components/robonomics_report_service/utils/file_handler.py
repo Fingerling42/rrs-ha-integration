@@ -200,3 +200,24 @@ def _read_tail_bytes(path: str, max_bytes: int) -> bytes:
         start = max(0, size - max_bytes)
         f.seek(start, os.SEEK_SET)
         return f.read()
+
+
+def remove_logs_files(log_path: str, backup_path: str) -> None:
+    """Remove integration log files if they exist."""
+    for path in (log_path, backup_path):
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            continue
+
+
+def remove_logs_dir_if_empty(log_path: str) -> None:
+    """Remove logs directory if it became empty."""
+    logs_dir = os.path.dirname(log_path)
+    if not logs_dir:
+        return
+    try:
+        os.rmdir(logs_dir)
+    except OSError:
+        # Not empty or cannot remove: ignore
+        return

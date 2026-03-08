@@ -10,6 +10,8 @@ from .const import (
     CREDS_STORAGE_KEY,
     DOMAIN,
     ERROR_WATCHERS_MANAGER,
+    LOGS_BACKUP_PATH,
+    LOGS_PATH,
     OWNER_ADDRESS,
     PROBLEM_REPORT_SERVICE,
     PROBLEM_SERVICE_ROBONOMICS_ADDRESS,
@@ -19,6 +21,7 @@ from .exceptions import StorageError
 from .ipfs import IPFS
 from .report_service import ReportService
 from .robonomics import Robonomics
+from .utils.file_handler import remove_logs_dir_if_empty, remove_logs_files
 from .utils.ha_storage import async_load_from_store, async_remove_store
 
 _LOGGER = logging.getLogger(__name__)
@@ -129,3 +132,16 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Called when the config entry is removed from Home Assistant."""
     await async_remove_store(hass, CREDS_STORAGE_KEY)
+
+    log_path = hass.config.path(LOGS_PATH)
+    backup_path = hass.config.path(LOGS_BACKUP_PATH)
+
+    try:
+        await hass.async_add_executor_job(
+            remove_logs_files, log_path, backup_path
+        )
+        await hass.async_add_executor_job(remove_logs_dir_if_empty, log_path)
+    except Exception:
+        _LOGGER.debug(
+            "Failed to clean up integration log files", exc_info=True
+        )
