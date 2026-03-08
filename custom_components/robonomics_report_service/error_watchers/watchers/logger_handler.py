@@ -51,6 +51,9 @@ class LoggerHandler(ErrorWatcher):
     @callback
     def setup(self):
         _LOGGER.debug("LoggerHandler initialized")
+        # Preppere directory for logs
+        self.hass.async_create_task(self._async_prepare_log_dir())
+
         # Create listener for event with appearing HA log
         self._event_listener = self.hass.bus.async_listen(
             EVENT_SYSTEM_LOG, self._catch_new_log
@@ -72,6 +75,14 @@ class LoggerHandler(ErrorWatcher):
             self._flush_timer_listener = None
 
         _LOGGER.debug("LoggerHandler removed")
+
+    async def _async_prepare_log_dir(self) -> None:
+        try:
+            await self.hass.async_add_executor_job(self._ensure_log_dir)
+        except Exception:
+            _LOGGER.debug(
+                "Failed to prepare local log directory", exc_info=True
+            )
 
     async def _catch_new_log(self, log_event: Event) -> None:
         """Catch needed logs and add them to the log buffer"""
