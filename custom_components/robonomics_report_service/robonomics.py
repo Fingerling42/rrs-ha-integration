@@ -12,7 +12,7 @@ from substrateinterface.exceptions import (
     ExtrinsicFailedException,
     SubstrateRequestException,
 )
-from tenacity import Retrying, stop_after_attempt, wait_fixed
+from tenacity import RetryError, Retrying, stop_after_attempt, wait_fixed
 
 from .const import NETWORK_WSS
 from .exceptions import RobonomicsError
@@ -68,40 +68,48 @@ class Robonomics:
             last_exc: Exception | None = None
             attempts = len(self.wss_endpoints)
 
-            for attempt in Retrying(
-                wait=wait_fixed(2),
-                stop=stop_after_attempt(attempts),
-                reraise=False,
-            ):
-                with attempt:
-                    try:
-                        return func(self, *args, **kwargs)
+            try:
+                for attempt in Retrying(
+                    wait=wait_fixed(2),
+                    stop=stop_after_attempt(attempts),
+                    reraise=False,
+                ):
+                    with attempt:
+                        try:
+                            return func(self, *args, **kwargs)
 
-                    except TimeoutError as e:
-                        last_exc = e
-                        self.change_current_wss()
-                        raise
-
-                    except SubstrateRequestException as e:
-                        last_exc = e
-                        code = self._substrate_code(e)
-
-                        if code == 1014:
-                            time.sleep(8)
+                        except TimeoutError as e:
+                            last_exc = e
                             self.change_current_wss()
                             raise
 
-                        self.change_current_wss()
-                        raise
+                        except SubstrateRequestException as e:
+                            last_exc = e
+                            code = self._substrate_code(e)
 
-                    except ExtrinsicFailedException as e:
-                        last_exc = e
-                        break
+                            if code == 1014:
+                                time.sleep(8)
+                                self.change_current_wss()
+                                raise
 
-                    except Exception as e:
-                        last_exc = e
-                        self.change_current_wss()
-                        raise
+                            self.change_current_wss()
+                            raise
+
+                        except ExtrinsicFailedException as e:
+                            last_exc = e
+                            break
+
+                        except Exception as e:
+                            last_exc = e
+                            self.change_current_wss()
+                            raise
+            except RetryError as e:
+                if e.last_attempt is not None and e.last_attempt.failed:
+                    exc = e.last_attempt.exception()
+                    if isinstance(exc, Exception):
+                        last_exc = exc
+                if last_exc is None:
+                    last_exc = e
 
             if last_exc is None:
                 raise RobonomicsError("Failed to send datalog")
