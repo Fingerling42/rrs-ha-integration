@@ -5,11 +5,12 @@ from .watchers import EntitiesStatusChecker, ErrorWatcher, LoggerHandler
 
 class ErrorWatchersManager:
     """Class to manage different watchers for errors"""
+
     def __init__(self, hass: HomeAssistant):
         self._started = False
         self.error_watchers: list[ErrorWatcher] = [
             EntitiesStatusChecker(hass),
-            LoggerHandler(hass)
+            LoggerHandler(hass),
         ]
 
     @callback

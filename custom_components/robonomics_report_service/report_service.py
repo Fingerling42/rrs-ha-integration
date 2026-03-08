@@ -1,36 +1,36 @@
+import asyncio
 import logging
 import os
-import asyncio
 from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
 from .const import (
-    LOG_FILE_NAME,
-    TRACES_FILE_NAME,
+    LOGS_BACKUP_PATH,
+    LOGS_PATH,
     RRS_REPORT_TEMP_DIR,
+    TRACES_FILE_NAME,
 )
-
-from .ipfs import IPFS
-from .utils.file_handler import (
-    create_temp_dir_with_encrypted_files,
-    delete_temp_dir,
-    get_temp_dirs,
-    create_temp_archive,
-    create_temp_dir_with_issue
-)
-from .robonomics import Robonomics
 from .exceptions import (
-    ReportInputError,
     EncryptedFilesStagingError,
-    IssueFileCreateError,
-    TempArchiveCreateError,
+    EnvelopeRecipientEncryptError,
     IPFSError,
+    IssueFileCreateError,
     PinataKeysRevokedError,
+    ReportInputError,
     RobonomicsError,
     StorageError,
-    EnvelopeRecipientEncryptError
+    TempArchiveCreateError,
+)
+from .ipfs import IPFS
+from .robonomics import Robonomics
+from .utils.file_handler import (
+    create_temp_archive,
+    create_temp_dir_with_encrypted_files,
+    create_temp_dir_with_issue,
+    delete_temp_dir,
+    get_temp_dirs,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -39,7 +39,8 @@ _LOGGER = logging.getLogger(__name__)
 class ReportService:
     """Main class to pass HA logs to Robonomics parachain"""
 
-    def __init__(self,
+    def __init__(
+        self,
         hass: HomeAssistant,
         ipfs: IPFS,
         robonomics: Robonomics,
@@ -67,9 +68,10 @@ class ReportService:
 
         async with self._send_lock:
             try:
-                temp_logs_dir, temp_issue_dir = (
-                    await self._get_temp_dir_with_encrypted_payload(issue)
-                )
+                (
+                    temp_logs_dir,
+                    temp_issue_dir,
+                ) = await self._get_temp_dir_with_encrypted_payload(issue)
 
                 temp_archive_path = await self._async_create_temp_archive(
                     temp_logs_dir,
@@ -85,22 +87,26 @@ class ReportService:
 
             # Validation / cannot build report errors
             except (
-                ReportInputError, IssueFileCreateError,
-                EncryptedFilesStagingError, EnvelopeRecipientEncryptError,
+                ReportInputError,
+                IssueFileCreateError,
+                EncryptedFilesStagingError,
+                EnvelopeRecipientEncryptError,
             ) as e:
                 raise ServiceValidationError(str(e)) from e
 
             # Needs user action errors
             except PinataKeysRevokedError as e:
                 raise HomeAssistantError(
-                    "Pinata API key revoked. " \
+                    "Pinata API key revoked. "
                     "Update credentials in integration."
                 ) from e
 
             # Operational / external systems errors
             except (
-                IPFSError, TempArchiveCreateError,
-                RobonomicsError, StorageError
+                IPFSError,
+                TempArchiveCreateError,
+                RobonomicsError,
+                StorageError,
             ) as e:
                 raise HomeAssistantError(str(e)) from e
 
@@ -116,17 +122,15 @@ class ReportService:
                 await self._delete_temp_dir(temp_issue_dir)
 
     async def _get_temp_dir_with_encrypted_payload(
-            self, issue: dict[str, Any] | None
-        ) -> tuple[str, str | None]:
+        self, issue: dict[str, Any] | None
+    ) -> tuple[str, str | None]:
 
         files = self._get_logs_files()
 
         temp_issue_dir: str | None = None
 
         if issue is not None:
-            issue_path = (
-                await self._async_create_temp_dir_with_issue(issue)
-            )
+            issue_path = await self._async_create_temp_dir_with_issue(issue)
             files.append(issue_path)
             temp_issue_dir = os.path.dirname(issue_path)
 
@@ -144,22 +148,23 @@ class ReportService:
             raise
 
     def _get_logs_files(self) -> list[str]:
-        hass_config_path = self.hass.config.path()
         files = []
 
-        log_path = os.path.join(hass_config_path, LOG_FILE_NAME)
-        traces_path = os.path.join(hass_config_path, TRACES_FILE_NAME)
+        current_log_path = self.hass.config.path(LOGS_PATH)
+        backup_log_path = self.hass.config.path(LOGS_BACKUP_PATH)
+        traces_path = self.hass.config.path(TRACES_FILE_NAME)
 
-        if os.path.isfile(log_path):
-            files.append(log_path)
+        if os.path.isfile(current_log_path):
+            files.append(current_log_path)
+        if os.path.isfile(backup_log_path):
+            files.append(backup_log_path)
         if os.path.isfile(traces_path):
             files.append(traces_path)
 
         return files
 
     async def _async_create_temp_dir_with_encrypted_files(
-        self,
-        files: list[str]
+        self, files: list[str]
     ) -> str:
         return await self.hass.async_add_executor_job(
             self._create_temp_dir_with_encrypted_files, files
@@ -199,21 +204,15 @@ class ReportService:
 
     def _create_temp_archive(self, dir_to_archive: str) -> str:
         return create_temp_archive(
-            dir_to_archive,
-            self.robonomics.sender_address,
-            RRS_REPORT_TEMP_DIR
+            dir_to_archive, self.robonomics.sender_address, RRS_REPORT_TEMP_DIR
         )
 
     async def _async_create_temp_dir_with_issue(
-        self,
-        issue: dict[str, Any]
+        self, issue: dict[str, Any]
     ) -> str:
         return await self.hass.async_add_executor_job(
             self._create_temp_dir_with_issue, issue
         )
 
     def _create_temp_dir_with_issue(self, issue: dict[str, Any]) -> str:
-        return create_temp_dir_with_issue(
-            issue,
-            RRS_REPORT_TEMP_DIR
-        )
+        return create_temp_dir_with_issue(issue, RRS_REPORT_TEMP_DIR)

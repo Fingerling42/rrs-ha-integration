@@ -1,36 +1,54 @@
-import logging
 from typing import Any, cast
 
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigFlowResult
+from homeassistant.helpers.selector import selector
 from robonomicsinterface import Keypair, KeypairType
 from robonomicsinterface.utils import create_keypair
 
 from .const import (
-    DOMAIN,
-    CREDS_STORAGE_KEY,
-    CONF_SENDER_SEED,
-    CONF_PINATA_SECRET,
+    CONF_NETWORK,
     CONF_PINATA_PUBLIC,
+    CONF_PINATA_SECRET,
     CONF_SENDER_EMAIL,
-    PROBLEM_SERVICE_ROBONOMICS_ADDRESS,
+    CONF_SENDER_SEED,
+    CREDS_STORAGE_KEY,
+    DEFAULT_NETWORK,
+    DOMAIN,
+    NETWORK_KUSAMA,
+    NETWORK_POLKADOT,
     OWNER_ADDRESS,
-    )
-
+    PROBLEM_SERVICE_ROBONOMICS_ADDRESS,
+)
+from .exceptions import StorageError
 from .robonomics import Robonomics
 from .utils.ha_storage import async_save_to_store
-from .exceptions import StorageError
-
-_LOGGER = logging.getLogger(__name__)
 
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
+        vol.Required(CONF_NETWORK, default=DEFAULT_NETWORK): selector(
+            {
+                "select": {
+                    "options": [
+                        {"value": NETWORK_POLKADOT, "label": "Polkadot"},
+                        {"value": NETWORK_KUSAMA, "label": "Kusama"},
+                    ],
+                    "mode": "dropdown",
+                }
+            }
+        ),
         vol.Required(PROBLEM_SERVICE_ROBONOMICS_ADDRESS): str,
         vol.Required(CONF_PINATA_PUBLIC): str,
         vol.Required(CONF_PINATA_SECRET): str,
         vol.Optional(CONF_SENDER_EMAIL): str,
         vol.Optional(OWNER_ADDRESS): str,
+    }
+)
+
+STEP_SEED_DATA_SCHEMA = vol.Schema(
+    {
+        vol.Optional(CONF_SENDER_SEED): str,
     }
 )
 
@@ -48,14 +66,13 @@ class ReportServiceConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
     def __init__(self):
-        self.seed_saved = False
-        self._sender_seed: str | None = None
+        self._generated_seed: str | None = None
+        self._generated_address: str | None = None
         self._storage_data = {}
 
     async def async_step_user(
-            self,
-            user_input: dict[str, Any] | None = None
-            ) -> ConfigFlowResult:
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         """The initial step of the configuration"""
 
         # Since it is needed exactly one integration instance, then assign
@@ -80,43 +97,49 @@ class ReportServiceConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Show the seed to user and configure Robonomics"""
         errors: dict[str, str] = {}
 
-        if self._sender_seed is None:
+        # Generate seed/address once for fallback and UI preview
+        if self._generated_seed is None:
             try:
-                self._sender_seed = Robonomics.generate_seed()
+                self._generated_seed = Robonomics.generate_seed()
+                generated_kp: Keypair = create_keypair(
+                    cast(str, self._generated_seed),
+                    crypto_type=KeypairType.ED25519,
+                )
+                self._generated_address = generated_kp.ss58_address
             except Exception:
                 errors["base"] = "seed_generation_failed"
 
-        if not errors:
-            try:
-                keypair: Keypair = create_keypair(
-                    cast(str, self._sender_seed),
-                    crypto_type=KeypairType.ED25519
-                )
-            except Exception:
-                errors["base"] = "keypair_generation_failed"
-
-        # Show the form with the seed and related address if it hasn't already
-        # been done, then save seed in _storage_data
-        if not self.seed_saved:
-            self.seed_saved = True
+        if user_input is None or errors:
             return self.async_show_form(
                 step_id="seed",
-                data_schema=vol.Schema({}),
+                data_schema=STEP_SEED_DATA_SCHEMA,
                 description_placeholders={
-                    "seed": self._sender_seed or "",
-                    "address": keypair.ss58_address if not errors else "",
+                    "generated_seed": self._generated_seed or "",
+                    "generated_address": self._generated_address or "",
                 },
                 errors=errors,
             )
 
-        if errors:
+        custom_seed = (user_input.get(CONF_SENDER_SEED) or "").strip()
+        selected_seed = custom_seed or cast(str, self._generated_seed)
+
+        try:
+            keypair: Keypair = create_keypair(
+                selected_seed,
+                crypto_type=KeypairType.ED25519,
+            )
+        except Exception:
             return self.async_show_form(
                 step_id="seed",
-                data_schema=vol.Schema({}),
-                errors=errors
+                data_schema=STEP_SEED_DATA_SCHEMA,
+                description_placeholders={
+                    "generated_seed": self._generated_seed or "",
+                    "generated_address": self._generated_address or "",
+                },
+                errors={"base": "invalid_seed"},
             )
 
-        self._storage_data[CONF_SENDER_SEED] = self._sender_seed
+        self._storage_data[CONF_SENDER_SEED] = selected_seed
 
         # Save config to persistent storage without direct user access from UI
         try:
@@ -126,11 +149,14 @@ class ReportServiceConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._storage_data,
             )
         except StorageError:
-            errors["base"] = "storage_save_failed"
             return self.async_show_form(
                 step_id="seed",
-                data_schema=vol.Schema({}),
-                errors=errors
+                data_schema=STEP_SEED_DATA_SCHEMA,
+                description_placeholders={
+                    "generated_seed": self._generated_seed or "",
+                    "generated_address": self._generated_address or "",
+                },
+                errors={"base": "storage_save_failed"},
             )
 
         # Make a mark in ConfigEntry that configuration is done

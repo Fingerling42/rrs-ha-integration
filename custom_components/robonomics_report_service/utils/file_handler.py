@@ -1,18 +1,20 @@
-import os
-import tempfile
-import shutil
 import json
-from zipfile import ZipFile, ZIP_DEFLATED
+import os
+import shutil
+import tempfile
 from typing import Any
+from zipfile import ZIP_DEFLATED, ZipFile
 
 import homeassistant.util.dt as dt_util
 from robonomicsinterface import Account
 
-from ..const import LOGS_MAX_BYTES
-from .encrypt_tools import multi_envelope_encrypt_data
+from ..const import REPORT_FILE_MAX_BYTES
 from ..exceptions import (
-    EncryptedFilesStagingError, TempArchiveCreateError, IssueFileCreateError
+    EncryptedFilesStagingError,
+    IssueFileCreateError,
+    TempArchiveCreateError,
 )
+from .encrypt_tools import multi_envelope_encrypt_data
 
 
 def create_temp_dir_with_encrypted_files(
@@ -45,19 +47,14 @@ def create_temp_dir_with_encrypted_files(
             try:
                 # Prepere metadata with file name
                 file_name = os.path.basename(file_path)
-                metadata = {
-                    "orig_file_name": file_name
-                }
+                metadata = {"orig_file_name": file_name}
 
                 # Only last 3 MiB of logs are needed
-                data_bytes = _read_tail_bytes(file_path, LOGS_MAX_BYTES)
+                data_bytes = _read_tail_bytes(file_path, REPORT_FILE_MAX_BYTES)
                 data = data_bytes.decode("utf-8", errors="replace")
 
                 encrypted_data = multi_envelope_encrypt_data(
-                    data,
-                    sender_account,
-                    list(recipient_addresses),
-                    metadata
+                    data, sender_account, list(recipient_addresses), metadata
                 )
 
                 # Unique temp file with ecncypted data
@@ -67,20 +64,20 @@ def create_temp_dir_with_encrypted_files(
                     suffix=".enc",
                     dir=temp_dir_path,
                     delete=False,
-                    delete_on_close=False
+                    delete_on_close=False,
                 ) as f:
                     f.write(encrypted_data)
 
             except Exception as e:
                 raise EncryptedFilesStagingError(
-                        "Failed to encrypt file",
-                        file_path=file_path
-                    ) from e
+                    "Failed to encrypt file", file_path=file_path
+                ) from e
 
         return temp_dir_path
     except Exception:
         shutil.rmtree(temp_dir_path, ignore_errors=True)
         raise
+
 
 def delete_temp_dir(temp_dir_path: str) -> None:
     """
@@ -97,6 +94,7 @@ def delete_temp_dir(temp_dir_path: str) -> None:
         # Best-effort cleanup, ignore any failure
         return
 
+
 def get_temp_dirs(dir_name_prefix: str) -> list[str]:
     """
     Collect list with all created temp dirs
@@ -110,9 +108,8 @@ def get_temp_dirs(dir_name_prefix: str) -> list[str]:
     try:
         with os.scandir(main_temp_dir_path) as all_temp_files:
             for temp_file in all_temp_files:
-                if (
-                    temp_file.is_dir()
-                    and temp_file.name.startswith(dir_name_prefix)
+                if temp_file.is_dir() and temp_file.name.startswith(
+                    dir_name_prefix
                 ):
                     found_temp_dirs_paths.append(temp_file.path)
     except OSError:
@@ -120,10 +117,9 @@ def get_temp_dirs(dir_name_prefix: str) -> list[str]:
 
     return found_temp_dirs_paths
 
+
 def create_temp_archive(
-    dir_to_archive: str,
-    address_prefix: str,
-    temp_dir_prefix: str
+    dir_to_archive: str, address_prefix: str, temp_dir_prefix: str
 ) -> str:
     """
     Create ZIP archive with files located in the specified directory
@@ -140,16 +136,16 @@ def create_temp_archive(
 
     # Prepearing path and name for archive
     dt = dt_util.utcnow()
-    dt_prefix = dt.strftime(
-        "%Y%m%dT%H%M%S"
-    ) + "MS" + f"{dt.microsecond//1000:03d}"
+    dt_prefix = (
+        dt.strftime("%Y%m%dT%H%M%S") + "MS" + f"{dt.microsecond // 1000:03d}"
+    )
 
     temp_archive_name = f"{address_prefix}-{dt_prefix}.zip"
     temp_archive_path = os.path.join(temp_archive_dir_path, temp_archive_name)
 
     try:
         with ZipFile(
-            temp_archive_path, 'w', compression=ZIP_DEFLATED
+            temp_archive_path, "w", compression=ZIP_DEFLATED
         ) as zip_file:
             for entry in os.scandir(dir_to_archive):
                 if not entry.is_file():
@@ -163,10 +159,11 @@ def create_temp_archive(
             f"Failed to create archive from directory: {dir_to_archive}"
         ) from e
 
+
 def create_temp_dir_with_issue(
-        issue: dict[str, Any],
-        temp_dir_prefix: str,
-    ) -> str:
+    issue: dict[str, Any],
+    temp_dir_prefix: str,
+) -> str:
     """
     Create temp directory and place there issue description to file
 
@@ -203,3 +200,24 @@ def _read_tail_bytes(path: str, max_bytes: int) -> bytes:
         start = max(0, size - max_bytes)
         f.seek(start, os.SEEK_SET)
         return f.read()
+
+
+def remove_logs_files(log_path: str, backup_path: str) -> None:
+    """Remove integration log files if they exist."""
+    for path in (log_path, backup_path):
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            continue
+
+
+def remove_logs_dir_if_empty(log_path: str) -> None:
+    """Remove logs directory if it became empty."""
+    logs_dir = os.path.dirname(log_path)
+    if not logs_dir:
+        return
+    try:
+        os.rmdir(logs_dir)
+    except OSError:
+        # Not empty or cannot remove: ignore
+        return

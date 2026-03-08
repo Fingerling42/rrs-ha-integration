@@ -1,32 +1,31 @@
-import logging
 import asyncio
+import logging
 from datetime import timedelta
 from typing import Any
 
 import homeassistant.util.dt as dt_util
-from homeassistant.helpers.entity_registry import (
-    async_get as async_get_entity_registry
-)
-from homeassistant.helpers.device_registry import (
-    async_get as async_get_devices_registry,
-)
-from homeassistant.helpers.device_registry import DeviceEntry
-from homeassistant.core import HomeAssistant, callback
 from homeassistant.const import (
     STATE_UNAVAILABLE,
 )
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.device_registry import DeviceEntry
+from homeassistant.helpers.device_registry import (
+    async_get as async_get_devices_registry,
+)
+from homeassistant.helpers.entity_registry import (
+    async_get as async_get_entity_registry,
+)
 from homeassistant.helpers.event import async_track_time_interval
 
+from ...const import CHECK_ENTITIES_TIMEOUT
 from .error_watcher import ErrorWatcher
-from ...const import (
-    CHECK_ENTITIES_TIMEOUT
-)
 
 _LOGGER = logging.getLogger(__name__)
 
 
 class EntitiesStatusChecker(ErrorWatcher):
     """Periodic health-check for all entities (unavailable / not updated)"""
+
     def __init__(self, hass: HomeAssistant) -> None:
         super().__init__(hass)
 
@@ -65,7 +64,6 @@ class EntitiesStatusChecker(ErrorWatcher):
     async def _check_entities(self, _=None) -> None:
 
         async with self._lock:
-
             # Delay to wait for the entities for the first run
             if self._first_run:
                 await asyncio.sleep(15)
@@ -79,7 +77,6 @@ class EntitiesStatusChecker(ErrorWatcher):
             unavailable_ids: list[str] = []
 
             for entity_id in all_entity_ids:
-
                 entity_entry = self.entity_registry.async_get(entity_id)
 
                 # Entities that have been explicitly disabled are
@@ -143,7 +140,6 @@ class EntitiesStatusChecker(ErrorWatcher):
                 "(unavailable_entities=%d, devices=%d)",
                 unavailable_counts["entities"],
                 unavailable_counts["devices"],
-
             )
             await self._send_report(issue)
 

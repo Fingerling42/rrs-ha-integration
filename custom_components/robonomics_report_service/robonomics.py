@@ -1,23 +1,22 @@
 import asyncio
+import json
 import logging
 import time
-import json
-from typing import Callable
 from collections import deque
+from collections.abc import Callable
 
 from homeassistant.core import HomeAssistant
 from robonomicsinterface import Account, Datalog
 from substrateinterface import Keypair, KeypairType
 from substrateinterface.exceptions import (
+    ExtrinsicFailedException,
     SubstrateRequestException,
-    ExtrinsicFailedException
 )
-from tenacity import Retrying, stop_after_attempt, wait_fixed
+from tenacity import RetryError, Retrying, stop_after_attempt, wait_fixed
 
-from .const import ROBONOMICS_WSS
-
-from .ipfs import IPFS
+from .const import NETWORK_WSS
 from .exceptions import RobonomicsError
+from .ipfs import IPFS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,6 +27,7 @@ class Robonomics:
     def __init__(
         self,
         hass: HomeAssistant,
+        network: str,
         ipfs: IPFS,
         sender_seed: str,
         owner_address: str | None = None,
@@ -35,7 +35,8 @@ class Robonomics:
         self.hass: HomeAssistant = hass
         self.ipfs: IPFS = ipfs
         self.sender_seed: str = sender_seed
-        self.current_wss: str = ROBONOMICS_WSS[0]
+        self.wss_endpoints: list[str] = NETWORK_WSS[network]
+        self.current_wss: str = self.wss_endpoints[0]
         self.sender_account: Account = Account(
             self.sender_seed,
             crypto_type=KeypairType.ED25519,
@@ -65,42 +66,50 @@ class Robonomics:
     def _retry_decorator(func: Callable):
         def wrapper(self, *args, **kwargs):
             last_exc: Exception | None = None
-            attempts = len(ROBONOMICS_WSS)
+            attempts = len(self.wss_endpoints)
 
-            for attempt in Retrying(
-                wait=wait_fixed(2),
-                stop=stop_after_attempt(attempts),
-                reraise=False,
-            ):
-                with attempt:
-                    try:
-                        return func(self, *args, **kwargs)
+            try:
+                for attempt in Retrying(
+                    wait=wait_fixed(2),
+                    stop=stop_after_attempt(attempts),
+                    reraise=False,
+                ):
+                    with attempt:
+                        try:
+                            return func(self, *args, **kwargs)
 
-                    except TimeoutError as e:
-                        last_exc = e
-                        self.change_current_wss()
-                        raise
-
-                    except SubstrateRequestException as e:
-                        last_exc = e
-                        code = self._substrate_code(e)
-
-                        if code == 1014:
-                            time.sleep(8)
+                        except TimeoutError as e:
+                            last_exc = e
                             self.change_current_wss()
                             raise
 
-                        self.change_current_wss()
-                        raise
+                        except SubstrateRequestException as e:
+                            last_exc = e
+                            code = self._substrate_code(e)
 
-                    except ExtrinsicFailedException as e:
-                        last_exc = e
-                        break
+                            if code == 1014:
+                                time.sleep(8)
+                                self.change_current_wss()
+                                raise
 
-                    except Exception as e:
-                        last_exc = e
-                        self.change_current_wss()
-                        raise
+                            self.change_current_wss()
+                            raise
+
+                        except ExtrinsicFailedException as e:
+                            last_exc = e
+                            break
+
+                        except Exception as e:
+                            last_exc = e
+                            self.change_current_wss()
+                            raise
+            except RetryError as e:
+                if e.last_attempt is not None and e.last_attempt.failed:
+                    exc = e.last_attempt.exception()
+                    if isinstance(exc, Exception):
+                        last_exc = exc
+                if last_exc is None:
+                    last_exc = e
 
             if last_exc is None:
                 raise RobonomicsError("Failed to send datalog")
@@ -130,15 +139,12 @@ class Robonomics:
                 data_to_send = self._datalog_queue.popleft()
 
                 try:
-                    await asyncio.to_thread(
-                        self._send_datalog,
-                        data_to_send
-                    )
+                    await asyncio.to_thread(self._send_datalog, data_to_send)
                 except RobonomicsError as e:
                     _LOGGER.warning(
                         "Datalog send failed "
                         "(will drop payload from queue): %s",
-                        e
+                        e,
                     )
                     try:
                         result = await self.ipfs.unpin_files_from_pinata(
@@ -149,11 +155,12 @@ class Robonomics:
 
                     if result and result.failed:
                         _LOGGER.warning(
-                            "Pinata cleanup incomplete after datalog " \
+                            "Pinata cleanup incomplete after datalog "
                             "failure (removed=%s/%s, failed=%s)",
-                            result.succeeded, result.attempted, result.failed
+                            result.succeeded,
+                            result.attempted,
+                            result.failed,
                         )
-
 
         finally:
             # In case the worker reached the end of the queue,
@@ -171,7 +178,7 @@ class Robonomics:
         # If no owner address is provided, use RWS of sender
         datalog = Datalog(
             self.sender_account,
-            rws_sub_owner=self._owner_address or self.sender_address
+            rws_sub_owner=self._owner_address or self.sender_address,
         )
 
         datalog.record(data_to_send)
@@ -181,12 +188,12 @@ class Robonomics:
     def change_current_wss(self) -> None:
         """Set next current wss"""
 
-        current_index = ROBONOMICS_WSS.index(self.current_wss)
-        if current_index == (len(ROBONOMICS_WSS) - 1):
+        current_index = self.wss_endpoints.index(self.current_wss)
+        if current_index == (len(self.wss_endpoints) - 1):
             next_index = 0
         else:
             next_index = current_index + 1
-        self.current_wss = ROBONOMICS_WSS[next_index]
+        self.current_wss = self.wss_endpoints[next_index]
         _LOGGER.debug("New Robonomics ws is %s", self.current_wss)
         self.sender_account: Account = Account(
             seed=self.sender_seed,

@@ -1,22 +1,23 @@
 import json
 import secrets
-from typing import Union, Optional, Any
-from nacl.secret import SecretBox
+from typing import Any
 
+from nacl.secret import SecretBox
 from robonomicsinterface import Account
 from substrateinterface import Keypair, KeypairType
 
 from ..exceptions import (
-    EnvelopeRecipientEncryptError,
+    EnvelopeCryptoDecryptError,
     EnvelopePackageDecryptError,
-    EnvelopeCryptoDecryptError
+    EnvelopeRecipientEncryptError,
 )
+
 
 def multi_envelope_encrypt_data(
     data: str,
     sender_account: Account,
     recipient_addresses: list[str],
-    metadata: Optional[dict[str, Any]] = None,
+    metadata: dict[str, Any] | None = None,
 ) -> str:
     """
     Encrypt the data with a symmetric secret key, and then encrypt the key
@@ -29,8 +30,7 @@ def multi_envelope_encrypt_data(
     # Add metadata to encryption
     if metadata is not None:
         prepared_data = json.dumps(
-            {"payload": data, "meta": metadata},
-            ensure_ascii=False
+            {"payload": data, "meta": metadata}, ensure_ascii=False
         )
     else:
         prepared_data = data
@@ -52,30 +52,28 @@ def multi_envelope_encrypt_data(
     for recipient_address in addresses_for_encryption:
         try:
             recipient_kp = Keypair(
-                ss58_address=recipient_address,
-                crypto_type=KeypairType.ED25519
+                ss58_address=recipient_address, crypto_type=KeypairType.ED25519
             )
         except Exception as e:
             raise EnvelopeRecipientEncryptError(
-                recipient_address,
-                "invalid public key"
+                recipient_address, "invalid public key"
             ) from e
 
         try:
             encrypted_secret_key = encrypt_msg(
-                secret_key,
-                sender_account.keypair,
-                recipient_kp.public_key
+                secret_key, sender_account.keypair, recipient_kp.public_key
             )
 
-            encryption_package["keys"][recipient_address] = encrypted_secret_key
+            encryption_package["keys"][recipient_address] = (
+                encrypted_secret_key
+            )
         except Exception as e:
             raise EnvelopeRecipientEncryptError(
-                recipient_address,
-                "secret key wrap failed"
+                recipient_address, "secret key wrap failed"
             ) from e
 
     return json.dumps(encryption_package)
+
 
 def multi_envelope_decrypt_data(
     encryption_package: str,
@@ -105,14 +103,12 @@ def multi_envelope_decrypt_data(
             "Invalid encryption package structure"
         ) from e
 
-    if (
-        not isinstance(encrypted_secret_keys, dict)
-        or not isinstance(encrypted_data_hex, str)
+    if not isinstance(encrypted_secret_keys, dict) or not isinstance(
+        encrypted_data_hex, str
     ):
         raise EnvelopePackageDecryptError(
             "Invalid encryption package structure"
         )
-
 
     # Check if recipient address is authorized with secret key
     recipient_address = recipient_account.get_address()
@@ -120,21 +116,20 @@ def multi_envelope_decrypt_data(
     if not encrypted_secret_key:
         raise EnvelopePackageDecryptError(
             "Recipient is not authorized for this package",
-            address=recipient_address
+            address=recipient_address,
         )
 
     # Get secret key from public-key decryption
 
     try:
         sender_kp = Keypair(
-            ss58_address=sender_address,
-            crypto_type=KeypairType.ED25519
+            ss58_address=sender_address, crypto_type=KeypairType.ED25519
         )
 
         secret_key = decrypt_msg(
             encrypted_secret_key,
             sender_kp.public_key,
-            recipient_account.keypair
+            recipient_account.keypair,
         )
     except Exception as e:
         raise EnvelopeCryptoDecryptError("decrypt_secret_key") from e
@@ -152,8 +147,9 @@ def multi_envelope_decrypt_data(
     except Exception as e:
         raise EnvelopeCryptoDecryptError("decrypt_payload") from e
 
+
 def encrypt_msg(
-    msg: Union[bytes, str],
+    msg: bytes | str,
     sender_keypair: Keypair,
     recipient_public_key: bytes,
 ) -> str:
@@ -167,6 +163,7 @@ def encrypt_msg(
     """
     encrypted = sender_keypair.encrypt_message(msg, recipient_public_key)
     return f"0x{encrypted.hex()}"
+
 
 def decrypt_msg(
     encrypted_msg: str,
@@ -187,7 +184,10 @@ def decrypt_msg(
 
     bytes_encrypted = bytes.fromhex(encrypted_msg)
 
-    return recipient_keypair.decrypt_message(bytes_encrypted, sender_public_key)
+    return recipient_keypair.decrypt_message(
+        bytes_encrypted, sender_public_key
+    )
+
 
 def parse_decrypted(text: str) -> tuple[str, dict | None]:
     """
