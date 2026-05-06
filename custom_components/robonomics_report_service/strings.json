@@ -1,14 +1,34 @@
 {
-    "title": "Robonomics Report Service",
-    "config": {
-      "step": {
-        "user": {
-          "title": "Robonomics Report Service",
-          "description": "Do you want to configure the Report Service?"
+  "title": "Robonomics Report Service",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Robonomics Report Service",
+        "description": "Enter data (for integrator only)",
+        "data": {
+          "network": "Network",
+          "problem_service_robonomics_address": "Robonomics address of integrator problem service",
+          "pinata_public": "Pinata public key",
+          "pinata_secret": "Pinata secret key",
+          "sender_email": "(Optional) E-mail for receiving solutions to problem reports",
+          "subscription_owner_robonomics_address": "(Optional) Robonomics address of subscription owner"
         }
       },
-      "abort": {
-        "already_configured": "[%key:common::config_flow::abort::already_configured_service%]"
+      "seed": {
+        "title": "Robonomics Report Service",
+        "description": "You can paste your own mnemonic seed below. If left empty, a generated seed will be used.\n\n**Generated mnemonic seed**\n```\n{generated_seed}\n```\n\n**Generated Robonomics address**\n```\n{generated_address}\n```",
+        "data": {
+          "sender_seed": "(Optional) Custom mnemonic seed"
+        }
       }
+    },
+    "error": {
+      "seed_generation_failed": "Failed to generate mnemonic seed",
+      "invalid_seed": "Invalid mnemonic seed",
+      "storage_save_failed": "Failed to save integration credentials"
+    },
+    "abort": {
+      "already_configured": "[%key:common::config_flow::abort::already_configured_service%]"
     }
+  }
 }

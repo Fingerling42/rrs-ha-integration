@@ -3,9 +3,15 @@
   "name": "Robonomics Report Service",
   "config_flow": true,
   "codeowners": ["@pinoutcloud"],
-  "version": "0.6.1",
-  "dependencies": ["persistent_notification", "http", "frontend"],
-  "requirements": ["robonomics-interface~=2.0.0", "pinatapy-vourhey==0.1.9", "tenacity==8.2.2", "py-ws-libp2p-proxy~=0.3"],
+  "version": "0.7.0",
+  "dependencies": ["system_log", "recorder"],
+  "requirements": [
+    "robonomics-interface==2.0.0",
+    "pinatapy-vourhey==0.1.9",
+    "tenacity==8.5.0"
+  ],
   "documentation": "https://wiki.robonomics.network/",
-  "issue_tracker": "https://github.com/PinoutLTD/rrs-ha-integration/issues"
+  "issue_tracker": "https://github.com/PinoutLTD/rrs-ha-integration/issues",
+  "integration_type": "service",
+  "iot_class": "cloud_push"
 }
