@@ -3,7 +3,7 @@
   "name": "Robonomics Report Service",
   "config_flow": true,
   "codeowners": ["@pinoutcloud"],
-  "version": "0.7.0",
+  "version": "1.0.0",
   "dependencies": ["system_log", "recorder"],
   "requirements": [
     "robonomics-interface==2.0.0",
